@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>YM → SoundCloud Transfer | Перенос плейлистов без паролей</title>
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <header>
+      <div class="logo-group">
+        <div class="logo-badge">
+          <span class="logo-icon-ym" title="Яндекс Музыка"></span>
+          <span class="logo-icon-arrow">→</span>
+          <span class="logo-icon-sc" title="SoundCloud"></span>
+          <span>YM to SoundCloud</span>
+        </div>
+      </div>
+      <button class="theme-toggle-btn" id="themeToggleBtn" title="Переключить тему (Светлая / Тёмная)">
+        <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+        </svg>
+      </button>
+    </header>
+
+    <!-- Main View (Screen 1: Setup & Input) -->
+    <main id="screenSetup">
+      <section class="hero">
+        <h1>Перенос плейлистов в SoundCloud</h1>
+        <p>Быстрый импорт музыки по публичной ссылке без авторизации и передачи паролей от аккаунтов.</p>
+      </section>
+
+      <!-- Restore Previous Transfer Banner -->
+      <div id="restoreJobBanner" class="hidden" style="background: rgba(255, 85, 0, 0.08); border: 1px solid var(--accent-sc); border-radius: 10px; padding: 12px 18px; margin-bottom: 18px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+        <div style="font-size: 13.5px; color: var(--text-main);">
+          🎵 <strong>Предыдущий перенос:</strong> <span id="restoreJobTitle">Мне нравится</span> (<span id="restoreJobCount">0</span> треков)
+        </div>
+        <button type="button" id="btnRestoreLatestJob" class="btn-primary" style="font-size: 12.5px; padding: 6px 14px; background: #FF5500;">
+          Показать результаты ↗
+        </button>
+      </div>
+
+      <div class="card">
+        <!-- Mode Switcher -->
+        <label class="input-label">Режим переноса:</label>
+        <div class="mode-segmented-control" role="tablist">
+          <button type="button" class="mode-btn active" id="modeZeroLogin" data-mode="zero_login">
+            <span>Режим Zero-Login</span>
+            <span class="mode-badge">Без входа</span>
+          </button>
+          <button type="button" class="mode-btn" id="modeAutoPlaylist" data-mode="auto_playlist">
+            <span>Авто-сборка в SoundCloud</span>
+            <span class="mode-badge">По токену сессии</span>
+          </button>
+        </div>
+
+        <!-- URL Input -->
+        <label for="playlistUrlInput" class="input-label">Ссылка на публичный плейлист Яндекс Музыки:</label>
+        <div class="input-row">
+          <input 
+            type="text" 
+            id="playlistUrlInput" 
+            class="text-input" 
+            placeholder="music.yandex.ru/users/.../playlists/... или playlists/lk..." 
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <button type="button" id="startTransferBtn" class="btn-primary">
+            <span id="startBtnText">Начать перенос</span>
+            <span id="startBtnSpinner" class="spinner hidden"></span>
+          </button>
+        </div>
+        <div style="font-size: 11.5px; color: var(--text-muted); margin-top: -6px; margin-bottom: 12px;">
+          ✓ Поддерживаются: <code>playlists/lk...</code>, <code>users/.../playlists/...</code> и альбомы <code>album/...</code>
+        </div>
+
+        <!-- Sample Pills for 1-Click Testing -->
+        <div class="sample-pills">
+          <span class="sample-label">Быстрый тест:</span>
+          <button type="button" class="pill-btn" data-url="demo-rock">🎸 Русский Рок & Инди</button>
+          <button type="button" class="pill-btn" data-url="demo-electro">🎧 Электроника & Hip-Hop</button>
+          <button type="button" class="pill-btn" data-url="https://music.yandex.ru/users/yamusic-top/playlists/1000">🔥 Чарт Яндекс Музыки</button>
+        </div>
+
+        <!-- Optional Session Token Box (shown when Auto-Assembly mode selected) -->
+        <div id="sessionTokenSection" class="token-container hidden">
+          <label for="oauthTokenInput" class="input-label">SoundCloud oauth_token (из активной сессии браузера):</label>
+          <div class="input-row">
+            <input 
+              type="text" 
+              id="oauthTokenInput" 
+              class="text-input" 
+              placeholder="Вставьте значение oauth_token (например: 2-293817-123456...)"
+              autocomplete="off"
+              spellcheck="false"
+            >
+            <button type="button" id="verifyTokenBtn" class="btn-secondary">Проверить</button>
+          </div>
+          <div id="tokenVerifyStatus" style="font-size: 12.5px; margin-top: -6px; margin-bottom: 8px;"></div>
+
+          <div class="token-guide-toggle" id="toggleGuideBtn">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></svg>
+            <span>Как подключить аккаунт за 5 секунд (3 простых способа)</span>
+          </div>
+
+          <div id="tokenGuideBox" class="token-guide-box hidden">
+            <!-- Method 1: Bookmarklet -->
+            <div style="margin-bottom: 16px;">
+              <div style="font-weight: 600; font-size: 13.5px; color: var(--text-main); margin-bottom: 4px;">
+                ⭐ Способ 1: Волшебная кнопка в закладки (в 1 клик, без консоли)
+              </div>
+              <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 8px;">
+                Перетащите кнопку ниже на панель закладок своего браузера (если панель скрыта, нажмите <code>Cmd + Shift + B</code>):
+              </p>
+              <div style="margin-bottom: 8px;">
+                <a href="javascript:(function(){var m=document.cookie.match(/oauth_token=([^;]+)/);var t=m?decodeURIComponent(m[1]):(localStorage.getItem('oauth_token')||'');if(!t){try{for(var i=0;i<localStorage.length;i++){var k=localStorage.key(i);if(k&&k.indexOf('token')!==-1){var v=localStorage.getItem(k);if(v&&v.length>20){t=v;break;}}}}catch(e){}}if(t){window.location.href='http://localhost:8000/?token='+encodeURIComponent(t);}else{alert('Не найден токен! Откройте вкладку soundcloud.com, где вы залогинены.');}})();" class="btn-primary" style="text-decoration: none; padding: 6px 14px; font-size: 12px; cursor: move;" title="Перетащите эту кнопку на панель закладок браузера">
+                  ⚡ Подключить SoundCloud
+                </a>
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted);">
+                Затем откройте вкладку <strong>soundcloud.com</strong> и просто нажмите на эту закладку — токен передастся сюда автоматически!
+              </p>
+            </div>
+
+            <!-- Method 2: 1-Click Console Snippet -->
+            <div style="margin-bottom: 16px; padding-top: 12px; border-top: 1px dashed var(--card-border);">
+              <div style="font-weight: 600; font-size: 13.5px; color: var(--text-main); margin-bottom: 4px;">
+                📋 Способ 2: Вставить 1 команду в консоль браузера
+              </div>
+              <p style="font-size: 12.5px; color: var(--text-muted); margin-bottom: 8px;">
+                На вкладке SoundCloud нажмите <code>Cmd + Option + J</code> (откроется консоль), вставьте команду ниже и нажмите Enter:
+              </p>
+              <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px;">
+                <input type="text" readonly class="text-input" style="font-family: monospace; font-size: 11.5px; padding: 6px 10px;" value="copy(document.cookie.match(/oauth_token=([^;]+)/)[1]); alert('Токен скопирован в буфер!');" id="consoleSnippetInput1">
+                <button type="button" class="btn-secondary" style="padding: 6px 12px; font-size: 12px;" onclick="copySnippet('consoleSnippetInput1', this)">Скопировать</button>
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted);">
+                Токен мгновенно скопируется в буфер обмена — просто нажмите <code>Cmd + V</code> в поле выше.
+              </p>
+            </div>
+
+            <!-- Method 3: DevTools manual -->
+            <div style="padding-top: 12px; border-top: 1px dashed var(--card-border);">
+              <div style="font-weight: 600; font-size: 13.5px; color: var(--text-main); margin-bottom: 4px;">
+                🔍 Способ 3: Вручную через Application → Cookies
+              </div>
+              <p style="font-size: 12px; color: var(--text-muted);">
+                На soundcloud.com нажмите <code>F12</code> → вкладка <strong>Application</strong> → <strong>Cookies</strong> → скопируйте значение <code>oauth_token</code>.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- Transfer & Progress View (Screen 2: Real-time SSE Matching) -->
+    <main id="screenProgress" class="hidden">
+      <div class="card">
+        <div class="transfer-header">
+          <div class="transfer-info">
+            <h2 id="progressPlaylistTitle">Обработка плейлиста...</h2>
+            <p id="progressStatusText">Поиск соответствий в SoundCloud...</p>
+          </div>
+          <div style="font-size: 14px; font-weight: 600;" id="progressCounter">0 / 0</div>
+        </div>
+
+        <div class="progress-track">
+          <div class="progress-bar" id="progressBar"></div>
+        </div>
+
+        <!-- Filter tabs for track list -->
+        <div style="display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap;">
+          <button type="button" class="pill-btn active-filter" id="filterAll">Все (<span id="countAll">0</span>)</button>
+          <button type="button" class="pill-btn" id="filterExact">Точные (<span id="countExact">0</span>)</button>
+          <button type="button" class="pill-btn" id="filterFuzzy">Перезаливы (<span id="countFuzzy">0</span>)</button>
+          <button type="button" class="pill-btn" id="filterNotFound">Не найдены (<span id="countNotFound">0</span>)</button>
+        </div>
+
+        <!-- Interactive Track List -->
+        <div class="track-list" id="trackListContainer"></div>
+      </div>
+    </main>
+
+    <!-- Final View (Screen 3: Transfer Complete & Actions) -->
+    <main id="screenFinal" class="hidden">
+      <div class="stats-banner">
+        <div class="stats-number" id="finalStatsNumber">0 / 0</div>
+        <div class="stats-label" id="finalStatsLabel">Треков успешно подобрано и готово к прослушиванию</div>
+        
+        <div class="action-row" id="finalActionButtons">
+          <!-- Populated dynamically based on chosen mode -->
+        </div>
+      </div>
+
+      <!-- Effortless SoundCloud Playlist Creation -->
+      <div class="card" id="cardAutoSave" style="border: 2px solid var(--accent-sc); background: rgba(255, 85, 0, 0.03); margin-bottom: 24px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+          <div>
+            <h3 style="font-size: 17px; font-weight: 700; margin-bottom: 4px;">⚡ Собрать плейлист в SoundCloud</h3>
+            <p style="font-size: 13.5px; color: var(--text-muted); margin: 0;">
+              Все подобранные треки будут добавлены в ваш профиль SoundCloud без ввода паролей.
+            </p>
+          </div>
+          <span id="extensionBadge" class="pill-btn hidden" style="background: rgba(52, 199, 89, 0.15); color: #34C759; border: 1px solid rgba(52, 199, 89, 0.3); font-weight: 600;">
+            ✓ Расширение подключено
+          </span>
+        </div>
+
+        <!-- Mode A: Extension 1-Click (If installed, completely automatic) -->
+        <div id="extFlowBlock" class="hidden" style="margin-top: 10px;">
+          <button type="button" id="btnExtensionCreate" class="btn-primary" style="background: #FF5500; font-size: 15px; padding: 14px 28px; width: 100%;">
+            <span id="extCreateBtnText">⚡ Создать плейлист в SoundCloud (1 клик)</span>
+            <span id="extCreateBtnSpinner" class="spinner hidden"></span>
+          </button>
+          <div id="extCreateStatus" style="font-size: 13px; margin-top: 8px; text-align: center;"></div>
+        </div>
+
+        <!-- Mode B: Standard 1-Click Bookmarklet (Zero install, zero console) -->
+        <div id="bookmarkletFlowBlock" style="margin-top: 6px;">
+          <div style="background: var(--bg-card); border: 1px solid var(--card-border); border-radius: 10px; padding: 16px; margin-bottom: 12px;">
+            <div style="font-size: 14px; font-weight: 600; margin-bottom: 10px; color: var(--text-main);">
+              Самый простой способ (без консоли и без паролей):
+            </div>
+            <div style="display: flex; gap: 14px; align-items: center; flex-wrap: wrap;">
+              <a 
+                href="javascript:(async function(){if(!location.hostname.includes('soundcloud.com')){alert('Откройте вкладку soundcloud.com перед нажатием!');return;}let t=document.getElementById('ym-sc-toast');if(!t){t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999999;background:#141414;color:#FFF;padding:18px 26px;border-radius:12px;box-shadow:0 12px 40px rgba(0,0,0,0.6);font-family:-apple-system,sans-serif;font-size:14px;border:2px solid #FF5500;text-align:center;min-width:320px;';document.body.appendChild(t);}t.innerHTML='<div style=%22color:#FF5500;font-weight:700;margin-bottom:6px;%22>⚡ YM Transfer</div><div>Загрузка треков...</div>';try{let r=null;try{r=await fetch('http://localhost:8000/api/latest-export');}catch(e){r=await fetch('http://127.0.0.1:8000/api/latest-export');}if(!r.ok)throw new Error('ERR');const d=await r.json();const ids=d.track_ids||[];const title=d.playlist_title||'Мне нравится (YM)';if(!ids.length){t.innerHTML='✕ Нет треков для добавления';return;}let tok=null;const m=document.cookie.match(/oauth_token=([^;]+)/);if(m)tok=decodeURIComponent(m[1]);if(!tok){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.toLowerCase().includes('token')){const v=localStorage.getItem(k);if(v&&v.length>20){tok=v;break;}}}}if(!tok){t.innerHTML='✕ Вы не вошли в SoundCloud на этой вкладке!';return;}let cid='cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';const scs=Array.from(document.querySelectorAll('script[src*=%22sndcdn.com%22]'));for(const s of scs){const ma=s.src.match(/client_id=([a-zA-Z0-9]{32})/);if(ma){cid=ma[1];break;}}const sz=480;const cks=[];for(let i=0;i<ids.length;i+=sz)cks.push(ids.slice(i,i+sz));const cre=[];for(let i=0;i<cks.length;i++){const pt=cks.length===1?title:`${title} (Часть ${i+1} из ${cks.length})`;t.innerHTML=`<div>Создаем плейлист...</div><div style=%22color:#FF5500;font-weight:700;margin-top:4px;%22>Часть ${i+1} из ${cks.length} (${cks[i].length} треков)</div>`;const pr=await fetch('https://api-v2.soundcloud.com/playlists?client_id='+cid,{method:'POST',headers:{'Authorization':'OAuth '+tok.replace(/^OAuth /i,''),'Content-Type':'application/json'},body:JSON.stringify({playlist:{title:pt,sharing:'public',tracks:cks[i]}})});if(!pr.ok)throw new Error('HTTP '+pr.status);const pd=await pr.json();cre.push(pd);}t.innerHTML=`<div style=%22color:#34C759;font-weight:700;font-size:15px;margin-bottom:6px;%22>✓ Добавлено ${ids.length} треков в профиль!</div><a href=%22${cre[0].permalink_url}%22 style=%22background:#FF5500;color:#FFF;padding:8px 16px;border-radius:6px;text-decoration:none;font-weight:700;display:inline-block;margin-top:6px;%22>Открыть плейлист ↗</a>`;}catch(e){t.innerHTML=`<div style=%22color:#FF3B30;font-weight:600;%22>Ошибка: ${e.message}</div>`;}})();" 
+                id="autoBookmarkletBtn" 
+                class="btn-primary" 
+                style="font-size: 13.5px; padding: 10px 18px; text-decoration: none; cursor: grab; background: #FF5500; display: inline-flex; align-items: center; gap: 6px;"
+                title="Перетащите эту кнопку на панель закладок (Cmd+Shift+B)"
+              >
+                <span>⭐ Собрать плейлист в SoundCloud</span>
+              </a>
+              <a href="https://soundcloud.com" target="_blank" class="btn-secondary" style="font-size: 13px; padding: 10px 16px; text-decoration: none;">
+                Открыть SoundCloud ↗
+              </a>
+            </div>
+            <div style="font-size: 12.5px; color: var(--text-muted); margin-top: 12px; line-height: 1.5;">
+              <strong>Инструкция в 2 простых шага:</strong><br>
+              1. Перетащите кнопку <strong>«⭐ Собрать плейлист в SoundCloud»</strong> выше на панель закладок браузера (<kbd>Cmd + Shift + B</kbd>).<br>
+              2. Откройте любую страницу SoundCloud и нажмите на неё — плейлист создастся автоматически!
+            </div>
+          </div>
+        </div>
+
+        <!-- Collapsible Advanced: Quick Console Copy (Just in case) -->
+        <div style="border-top: 1px dashed var(--card-border); padding-top: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+          <span style="font-size: 12px; color: var(--text-muted);">Запасной вариант через консоль вкладки SoundCloud:</span>
+          <button type="button" id="btnCopySCRunnerScript" class="btn-secondary" style="font-size: 11.5px; padding: 5px 10px;">
+            <span id="btnCopyRunnerText">📋 Скопировать 1 команду</span>
+          </button>
+        </div>
+        <div id="copyRunnerSuccessAlert" class="hidden" style="background: rgba(52, 199, 89, 0.1); border-radius: 6px; padding: 8px 12px; font-size: 12px; color: #34C759; margin-top: 6px;">
+          ✓ Команда скопирована! Вставьте её на вкладке SoundCloud (<kbd>Cmd + Option + J</kbd> → <kbd>Enter</kbd>).
+        </div>
+      </div>
+
+      <!-- Export & Missing tracks card -->
+      <div class="card" id="exportCard">
+        <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 14px;">Экспорт и резервное сохранение</h3>
+        <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+          Вы можете скачать плейлист в удобном формате или сразу открыть все найденные треки в отдельных вкладках.
+        </p>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+          <button type="button" id="btnExportM3U" class="btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+            Скачать M3U
+          </button>
+          <button type="button" id="btnExportLinks" class="btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+            Список ссылок (.txt)
+          </button>
+          <button type="button" id="btnExportJSON" class="btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 7 12 12 22 7 12 2"></polygon><polyline points="2 17 12 22 22 17"></polyline><polyline points="2 12 12 17 22 12"></polyline></svg>
+            JSON-дамп
+          </button>
+          <button type="button" id="btnOpenAllLinks" class="btn-secondary">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            Открыть все треки
+          </button>
+          <button type="button" id="btnTransferAnother" class="btn-secondary" style="margin-left: auto;">
+            Перенести ещё один
+          </button>
+        </div>
+      </div>
+    </main>
+
+    <!-- Embedded Audio Mini-Player Footer Bar (hidden by default) -->
+    <div id="audioPlayerBar" class="hidden" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--card-bg); border: 1px solid var(--card-border); box-shadow: var(--shadow-dropdown); border-radius: var(--radius-full); padding: 8px 18px; display: flex; align-items: center; gap: 14px; z-index: 1000; max-width: 500px; width: 90%;">
+      <span id="playerTrackInfo" style="font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1;">Воспроизведение...</span>
+      <audio id="globalAudioPlayer" controls style="height: 32px; outline: none;"></audio>
+      <button type="button" id="closeAudioPlayer" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 16px;">✕</button>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
