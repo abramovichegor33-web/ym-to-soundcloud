@@ -7,6 +7,7 @@
   "host_permissions": [
     "https://soundcloud.com/*",
     "https://api-v2.soundcloud.com/*",
+    "https://*.onrender.com/*",
     "http://localhost:8000/*",
     "http://127.0.0.1:8000/*"
   ],
@@ -15,7 +16,11 @@
   },
   "content_scripts": [
     {
-      "matches": ["http://localhost:8000/*", "http://127.0.0.1:8000/*"],
+      "matches": [
+        "https://*.onrender.com/*",
+        "http://localhost:8000/*",
+        "http://127.0.0.1:8000/*"
+      ],
       "js": ["bridge.js"],
       "run_at": "document_idle"
     },
