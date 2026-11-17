@@ -1,41 +1,41 @@
 /* ==========================================================================
-   YM -> SoundCloud Transfer: Soft White / Soft Black Design System
+   Music Transfer Hub: Premium Dark Theme Design System (Dark Only)
    ========================================================================== */
 
-:root {
-  /* Soft White (Default Light Mode) */
-  --bg: #F7F7F5;
-  --card-bg: #FFFFFF;
-  --card-border: #E8E8E6;
-  --card-hover: #FBFBFA;
-  --text-main: #1C1C1E;
-  --text-muted: #8E8E93;
-  --text-subtle: #AEAEB2;
-  --input-bg: #FFFFFF;
-  --input-border: #E5E5EA;
-  --input-focus: #1C1C1E;
+:root, [data-theme="dark"], [data-theme="light"] {
+  /* Ultra-Clean Modern Dark Palette */
+  --bg: #0B0C10;
+  --card-bg: #13151D;
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-hover: #191B26;
+  --text-main: #FFFFFF;
+  --text-muted: #8E93A4;
+  --text-subtle: #5A6072;
+  --input-bg: #0E1017;
+  --input-border: rgba(255, 255, 255, 0.12);
+  --input-focus: #FF5500;
   
   /* Brand & Status Accents */
   --accent-sc: #FF5500;
   --accent-sc-hover: #E04B00;
-  --accent-sc-subtle: rgba(255, 85, 0, 0.08);
-  --accent-ym: #FC3F1D;
+  --accent-sc-subtle: rgba(255, 85, 0, 0.14);
+  --accent-ym: #FFCC00;
   
-  --badge-exact-bg: rgba(52, 199, 89, 0.12);
-  --badge-exact-text: #248A3D;
-  --badge-exact-border: rgba(52, 199, 89, 0.25);
+  --badge-exact-bg: rgba(48, 209, 88, 0.16);
+  --badge-exact-text: #4CD964;
+  --badge-exact-border: rgba(48, 209, 88, 0.35);
 
-  --badge-fuzzy-bg: rgba(255, 149, 0, 0.12);
-  --badge-fuzzy-text: #C97200;
-  --badge-fuzzy-border: rgba(255, 149, 0, 0.25);
+  --badge-fuzzy-bg: rgba(255, 159, 10, 0.16);
+  --badge-fuzzy-text: #FFB340;
+  --badge-fuzzy-border: rgba(255, 159, 10, 0.35);
 
-  --badge-notfound-bg: rgba(142, 142, 147, 0.12);
-  --badge-notfound-text: #636366;
-  --badge-notfound-border: rgba(142, 142, 147, 0.25);
+  --badge-notfound-bg: rgba(142, 142, 147, 0.16);
+  --badge-notfound-text: #AEAEB2;
+  --badge-notfound-border: rgba(142, 142, 147, 0.3);
 
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.04);
-  --shadow-md: 0 4px 20px rgba(0, 0, 0, 0.06);
-  --shadow-dropdown: 0 12px 32px rgba(0, 0, 0, 0.12);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 30px rgba(0, 0, 0, 0.6);
+  --shadow-dropdown: 0 16px 48px rgba(0, 0, 0, 0.8);
 
   --radius-sm: 8px;
   --radius-md: 14px;
@@ -43,38 +43,6 @@
   --radius-full: 9999px;
 
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Inter", "Segoe UI", Roboto, sans-serif;
-}
-
-[data-theme="dark"] {
-  /* Soft Black (Dark Mode) */
-  --bg: #141414;
-  --card-bg: #1E1E1E;
-  --card-border: #2C2C2E;
-  --card-hover: #262628;
-  --text-main: #F2F2F7;
-  --text-muted: #8E8E93;
-  --text-subtle: #636366;
-  --input-bg: #1E1E1E;
-  --input-border: #2C2C2E;
-  --input-focus: #F2F2F7;
-
-  --accent-sc-subtle: rgba(255, 85, 0, 0.15);
-
-  --badge-exact-bg: rgba(48, 209, 88, 0.18);
-  --badge-exact-text: #4CD964;
-  --badge-exact-border: rgba(48, 209, 88, 0.35);
-
-  --badge-fuzzy-bg: rgba(255, 159, 10, 0.18);
-  --badge-fuzzy-text: #FFB340;
-  --badge-fuzzy-border: rgba(255, 159, 10, 0.35);
-
-  --badge-notfound-bg: rgba(142, 142, 147, 0.18);
-  --badge-notfound-text: #AEAEB2;
-  --badge-notfound-border: rgba(142, 142, 147, 0.35);
-
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 24px rgba(0, 0, 0, 0.45);
-  --shadow-dropdown: 0 14px 40px rgba(0, 0, 0, 0.65);
 }
 
 /* ==========================================================================

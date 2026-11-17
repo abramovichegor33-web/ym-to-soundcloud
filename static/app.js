@@ -19,7 +19,6 @@ const state = {
 };
 
 // DOM Elements
-const themeToggleBtn = document.getElementById('themeToggleBtn');
 const dirYmToScBtn = document.getElementById('dirYmToSc');
 const dirScToYmBtn = document.getElementById('dirScToYm');
 const heroTitle = document.getElementById('heroTitle');
@@ -81,7 +80,6 @@ if (dirScToYmBtn) dirScToYmBtn.addEventListener('click', () => setDirection('sc_
 const toggleGuideBtn = document.getElementById('toggleGuideBtn');
 const tokenGuideBox = document.getElementById('tokenGuideBox');
 
-const playlistUrlInput = document.getElementById('playlistUrlInput');
 const startTransferBtn = document.getElementById('startTransferBtn');
 const startBtnText = document.getElementById('startBtnText');
 const startBtnSpinner = document.getElementById('startBtnSpinner');
@@ -118,24 +116,11 @@ const playerTrackInfo = document.getElementById('playerTrackInfo');
 const closeAudioPlayer = document.getElementById('closeAudioPlayer');
 
 /* ==========================================================================
-   Theme Management
+   Theme Management (Permanent Premium Dark Mode)
    ========================================================================== */
-function applyTheme(theme) {
-  state.theme = theme;
-  document.documentElement.setAttribute('data-theme', theme);
-  localStorage.setItem('ym_sc_theme', theme);
-  const icon = document.getElementById('themeIcon');
-  if (theme === 'dark') {
-    icon.innerHTML = '<circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>';
-  } else {
-    icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>';
-  }
-}
-
-themeToggleBtn.addEventListener('click', () => {
-  applyTheme(state.theme === 'dark' ? 'light' : 'dark');
-});
-applyTheme(state.theme);
+state.theme = 'dark';
+document.documentElement.setAttribute('data-theme', 'dark');
+localStorage.setItem('ym_sc_theme', 'dark');
 
 /* ==========================================================================
    Mode Switcher & Token Setup
@@ -193,8 +178,11 @@ verifyTokenBtn.addEventListener('click', async () => {
 // Sample Pills
 document.querySelectorAll('.pill-btn[data-url]').forEach(btn => {
   btn.addEventListener('click', () => {
-    playlistUrlInput.value = btn.getAttribute('data-url');
-    startTransferBtn.click();
+    const u = btn.dataset.url || btn.getAttribute('data-url');
+    if (u) {
+      playlistUrlInput.value = u;
+      startTransferBtn.click();
+    }
   });
 });
 
