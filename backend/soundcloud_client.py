@@ -354,7 +354,7 @@ class SoundCloudClient:
             cid = await self.get_client_id()
             client = await self.get_http_client()
             resolve_url = f"https://api-v2.soundcloud.com/resolve?url={urllib.parse.quote(clean_url)}&client_id={cid}"
-            resp = await client.get(resolve_url, timeout=12.0)
+            resp = await client.get(resolve_url, timeout=6.0)
             
             if resp.status_code == 200:
                 data = resp.json()
@@ -374,7 +374,7 @@ class SoundCloudClient:
                         try:
                             tr_resp = await client.get(
                                 f"https://api-v2.soundcloud.com/tracks?ids={ids_str}&client_id={cid}",
-                                timeout=12.0
+                                timeout=6.0
                             )
                             if tr_resp.status_code == 200:
                                 return tr_resp.json()

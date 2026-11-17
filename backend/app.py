@@ -20,7 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .utils import generate_search_queries
+from .utils import generate_search_queries, generate_sc_to_ym_queries
 from .matcher import rank_and_select_best
 from .soundcloud_client import SoundCloudClient
 from .yandex_parser import YandexMusicParser
@@ -105,6 +105,10 @@ class CreatePlaylistRequest(BaseModel):
 class VerifyTokenRequest(BaseModel):
     oauth_token: str
 
+class ManualSearchRequest(BaseModel):
+    query: str
+    direction: Optional[str] = "ym_to_sc"
+
 @app.post("/api/parse")
 async def parse_playlist(req: ParseRequest):
     """Parses a playlist from Yandex Music or SoundCloud based on direction/URL."""
@@ -160,11 +164,19 @@ async def run_search_worker(job_id: str):
 
             direction = job.get("direction", "ym_to_sc")
             if direction == "sc_to_ym":
-                # Searching Yandex Music for SoundCloud track
-                q = f"{artist} {title}".strip()
-                candidates = await ym_parser.search_track(q, limit=5)
-                if not candidates and title:
-                    candidates = await ym_parser.search_track(title, limit=5)
+                # High-Precision Multi-Level Underground Search Cascade for Yandex Music
+                queries = generate_sc_to_ym_queries(artist, title)
+                candidates = []
+                seen_ids = set()
+                for q in queries:
+                    q_cands = await ym_parser.search_track(q, limit=5)
+                    for c in q_cands:
+                        cid = c.get("id")
+                        if cid and cid not in seen_ids:
+                            seen_ids.add(cid)
+                            candidates.append(c)
+                    if len(candidates) >= 5:
+                        break
             else:
                 # Searching SoundCloud for Yandex Music track
                 queries = generate_search_queries(artist, title)
@@ -317,6 +329,20 @@ async def select_alternative_match(req: SelectMatchRequest):
 
     return {"success": True, "track": track_entry}
 
+@app.post("/api/search-manual")
+async def manual_search(req: ManualSearchRequest):
+    """Searches target platform catalog directly for manual correction."""
+    q = req.query.strip()
+    if not q:
+        return {"success": True, "results": []}
+
+    if req.direction == "sc_to_ym":
+        results = await ym_parser.search_track(q, limit=8)
+    else:
+        results = await sc_client.search_single_query(q, limit=8)
+
+    return {"success": True, "results": results}
+
 @app.post("/api/create-playlist")
 async def create_soundcloud_playlist(req: CreatePlaylistRequest):
     """Zero-Password automatic playlist creation via browser session oauth_token."""
@@ -413,6 +439,26 @@ async def export_json(job_id: str):
         "tracks": [t for t in job.get("tracks", []) if t is not None]
     }
     return JSONResponse(data)
+
+@app.get("/api/export/{job_id}/missing")
+async def export_missing_tracks(job_id: str):
+    """Exports list of tracks that could not be found on target platform."""
+    job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Задача не найдена")
+
+    missing = []
+    for t in job.get("tracks", []):
+        if t and t.get("status") == "not_found":
+            src = t.get("source_track") or t.get("ym_track") or {}
+            missing.append(f"{src.get('artist', '')} - {src.get('title', '')}".strip())
+
+    text_content = "\n".join(missing) if missing else "Все треки успешно найдены!"
+    return Response(
+        content=text_content,
+        media_type="text/plain; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename=missing_tracks_{job_id}.txt"}
+    )
 
 @app.options("/api/latest-export")
 async def options_latest_export():

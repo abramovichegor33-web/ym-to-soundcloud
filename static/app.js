@@ -309,7 +309,9 @@ function connectEventSource(jobId, total) {
 
         progressBar.style.width = `${data.percent}%`;
         progressCounter.textContent = `${data.completed} / ${total}`;
-        progressStatusText.textContent = `Параллельный поиск в SoundCloud: ${data.completed} из ${total} (${data.percent}%)...`;
+        progressStatusText.textContent = state.direction === 'sc_to_ym' 
+          ? `Поиск треков в Яндекс Музыке: ${data.completed} из ${total} (${data.percent}%)...`
+          : `Параллельный поиск в SoundCloud: ${data.completed} из ${total} (${data.percent}%)...`;
 
         // Update counter numbers immediately
         countAll.textContent = data.completed;
@@ -348,7 +350,8 @@ function createCardElement(item) {
   card.id = `trackCard-${item.index}`;
   card.dataset.status = item.status;
 
-  const ym = item.ym_track || item.source_track || {};
+  const isScToYm = (item.direction || state.direction) === 'sc_to_ym';
+  const src = item.ym_track || item.source_track || {};
   const match = item.selected_match;
   const alternatives = item.alternatives || [];
 
@@ -356,7 +359,7 @@ function createCardElement(item) {
     card.dataset.scId = match.id;
   }
 
-  const durSec = ym.duration_ms ? Math.round(ym.duration_ms / 1000) : 0;
+  const durSec = src.duration_ms ? Math.round(src.duration_ms / 1000) : 0;
   const durStr = durSec ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : '';
 
   let badgeHtml = '';
@@ -365,14 +368,14 @@ function createCardElement(item) {
   } else if (item.status === 'fuzzy') {
     badgeHtml = `<span class="status-badge fuzzy">≈ Перезалив (${match ? '±' + match.duration_diff + 'с' : ''})</span>`;
   } else {
-    badgeHtml = `<span class="status-badge not_found">✕ Не найден</span>`;
+    badgeHtml = `<span class="status-badge not_found">${isScToYm ? '✕ Нет в ЯМ' : '✕ Не найден'}</span>`;
   }
 
   let matchLinkHtml = '';
   if (match && match.permalink_url) {
     matchLinkHtml = `
-      <a href="${match.permalink_url}" target="_blank" rel="noreferrer" class="sc-link-btn" title="Открыть трек в SoundCloud">
-        <span>Слушать</span>
+      <a href="${match.permalink_url}" target="_blank" rel="noreferrer" class="sc-link-btn" title="Открыть трек">
+        <span>${isScToYm ? 'В Я.Музыке' : 'Слушать'}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
       </a>
     `;
@@ -382,38 +385,50 @@ function createCardElement(item) {
   if (alternatives.length > 0) {
     altBtnHtml = `
       <button type="button" class="alt-btn" onclick="toggleAltMenu(${item.index})">
-        Выбрать другой (${alternatives.length}) ▾
+        Варианты (${alternatives.length}) ▾
       </button>
     `;
   }
 
+  const manualBtnHtml = `
+    <button type="button" class="alt-btn" style="color: ${isScToYm ? 'var(--accent-ym)' : 'var(--accent-sc)'};" onclick="toggleManualSearch(${item.index})">
+      🔍 Найти
+    </button>
+  `;
+
+  const matchLabel = match
+    ? `<div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">${isScToYm ? 'ЯМ' : 'SC'}: ${escapeHtml(match.title)} (${escapeHtml(match.artist || match.author || '')})</div>`
+    : '';
+
   card.innerHTML = `
     <div class="track-card-left">
       <span class="track-number">${item.index + 1}</span>
-      <img class="track-cover" src="${ym.cover_url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect width=%221%22 height=%221%22 fill=%22%23ddd%22/></svg>'}" alt="" loading="lazy">
+      <img class="track-cover" src="${src.cover_url || 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 1 1%22><rect width=%221%22 height=%221%22 fill=%22%23ddd%22/></svg>'}" alt="" loading="lazy">
       <div class="track-meta">
-        <div class="track-title">${escapeHtml(ym.title)}</div>
-        <div class="track-artist">${escapeHtml(ym.artist)} ${durStr ? '• ' + durStr : ''}</div>
-        ${match ? `<div style="font-size: 11.5px; color: var(--text-muted); margin-top: 2px;">SC: ${escapeHtml(match.title)} (${escapeHtml(match.author || '')})</div>` : ''}
+        <div class="track-title">${escapeHtml(src.title)}</div>
+        <div class="track-artist">${escapeHtml(src.artist)} ${durStr ? '• ' + durStr : ''}</div>
+        ${matchLabel}
       </div>
     </div>
     <div class="track-card-right">
       ${badgeHtml}
       ${matchLinkHtml}
       ${altBtnHtml}
+      ${manualBtnHtml}
     </div>
     <div class="alt-menu hidden" id="altMenu-${item.index}">
-      <div class="alt-menu-header">Выберите другой вариант из SoundCloud:</div>
+      <div class="alt-menu-header">Выберите вариант из ${isScToYm ? 'Яндекс Музыки' : 'SoundCloud'}:</div>
       ${alternatives.map(alt => `
         <div class="alt-item" onclick="selectAlternativeTrack(${item.index}, ${escapeJsonAttr(alt)})">
           <div>
             <div class="alt-item-title">${escapeHtml(alt.title)}</div>
-            <div class="alt-item-meta">${escapeHtml(alt.author || '')} • ${Math.floor(alt.duration_sec / 60)}:${(alt.duration_sec % 60).toString().padStart(2, '0')} (±${alt.duration_diff}с)</div>
+            <div class="alt-item-meta">${escapeHtml(alt.artist || alt.author || '')} • ${Math.floor(alt.duration_sec / 60)}:${(alt.duration_sec % 60).toString().padStart(2, '0')} (±${alt.duration_diff}с)</div>
           </div>
-          <span style="font-size: 11px; font-weight: 600; color: var(--accent-sc); margin-left: 8px;">${alt.composite_score}%</span>
+          <span style="font-size: 11px; font-weight: 600; color: ${isScToYm ? 'var(--accent-ym)' : 'var(--accent-sc)'}; margin-left: 8px;">${alt.composite_score}%</span>
         </div>
       `).join('')}
     </div>
+    <div class="manual-search-drawer hidden" id="manualSearch-${item.index}"></div>
   `;
 
   return card;
@@ -470,6 +485,7 @@ window.selectAlternativeTrack = async function(trackIndex, candidate) {
     });
     const data = await res.json();
     if (data.success) {
+      state.tracksMap.set(trackIndex, data.track);
       const oldCard = document.getElementById(`trackCard-${trackIndex}`);
       if (oldCard) {
         const newCard = createCardElement(data.track);
@@ -478,6 +494,104 @@ window.selectAlternativeTrack = async function(trackIndex, candidate) {
     }
   } catch (e) {
     alert('Ошибка при выборе трека: ' + e.message);
+  }
+};
+
+window.toggleManualSearch = function(trackIndex) {
+  const drawer = document.getElementById(`manualSearch-${trackIndex}`);
+  if (!drawer) return;
+
+  if (!drawer.classList.contains('hidden')) {
+    drawer.classList.add('hidden');
+    return;
+  }
+
+  // Close any open altMenu on this card
+  const altMenu = document.getElementById(`altMenu-${trackIndex}`);
+  if (altMenu) altMenu.classList.add('hidden');
+
+  const item = state.tracksMap.get(trackIndex);
+  if (!item) return;
+
+  const src = item.source_track || item.ym_track || {};
+  const isScToYm = (item.direction || state.direction) === 'sc_to_ym';
+  const defaultQuery = `${src.artist || ''} ${src.title || ''}`.trim();
+
+  drawer.innerHTML = `
+    <div class="manual-search-bar">
+      <input type="text" id="manualInput-${trackIndex}" class="manual-search-input" value="${escapeHtml(defaultQuery)}" placeholder="Введите название или артиста...">
+      <button type="button" class="manual-search-btn" onclick="executeManualSearch(${trackIndex})">Найти</button>
+    </div>
+    <div class="manual-suggestions">
+      ${src.artist ? `<span class="manual-tag" onclick="setManualQuery(${trackIndex}, '${escapeHtml(src.artist)}')">${escapeHtml(src.artist)}</span>` : ''}
+      ${src.title ? `<span class="manual-tag" onclick="setManualQuery(${trackIndex}, '${escapeHtml(src.title)}')">${escapeHtml(src.title)}</span>` : ''}
+    </div>
+    <div class="manual-results-list" id="manualResults-${trackIndex}">
+      <div style="font-size: 12px; color: var(--text-muted); padding: 4px;">Нажмите «Найти» для прямого поиска по каталогу ${isScToYm ? 'Яндекс Музыки' : 'SoundCloud'}.</div>
+    </div>
+  `;
+
+  drawer.classList.remove('hidden');
+
+  const inp = document.getElementById(`manualInput-${trackIndex}`);
+  if (inp) {
+    inp.focus();
+    inp.onkeydown = (e) => {
+      if (e.key === 'Enter') executeManualSearch(trackIndex);
+    };
+  }
+};
+
+window.setManualQuery = function(trackIndex, val) {
+  const inp = document.getElementById(`manualInput-${trackIndex}`);
+  if (inp) {
+    inp.value = val;
+    executeManualSearch(trackIndex);
+  }
+};
+
+window.executeManualSearch = async function(trackIndex) {
+  const inp = document.getElementById(`manualInput-${trackIndex}`);
+  const list = document.getElementById(`manualResults-${trackIndex}`);
+  if (!inp || !list) return;
+
+  const q = inp.value.trim();
+  if (!q) return;
+
+  list.innerHTML = '<div style="font-size: 12px; color: var(--text-muted); padding: 6px;">Поиск в каталоге...</div>';
+
+  try {
+    const res = await fetch('/api/search-manual', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ query: q, direction: state.direction })
+    });
+    const data = await res.json();
+    const results = data.results || [];
+
+    if (!results.length) {
+      list.innerHTML = '<div style="font-size: 12px; color: #FF9500; padding: 6px;">Ничего не найдено. Попробуйте изменить запрос.</div>';
+      return;
+    }
+
+    list.innerHTML = results.map(r => {
+      const art = r.artist || (r.user && r.user.username) || '';
+      const dur = r.duration_sec || (r.duration_ms ? Math.round(r.duration_ms / 1000) : 0);
+      const durStr = dur ? `${Math.floor(dur / 60)}:${(dur % 60).toString().padStart(2, '0')}` : '';
+      return `
+        <div class="manual-result-item">
+          <div style="max-width: 75%;">
+            <div style="font-size: 12.5px; font-weight: 600; color: #FFF; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${escapeHtml(r.title)}</div>
+            <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(art)} ${durStr ? '• ' + durStr : ''}</div>
+          </div>
+          <button type="button" class="manual-pick-btn" onclick="selectAlternativeTrack(${trackIndex}, ${escapeJsonAttr(r)})">
+            Выбрать ✓
+          </button>
+        </div>
+      `;
+    }).join('');
+  } catch(e) {
+    list.innerHTML = `<div style="font-size: 12px; color: #FF3B30; padding: 6px;">Ошибка: ${e.message}</div>`;
   }
 };
 
@@ -570,6 +684,11 @@ async function finishTransfer(stats) {
     <button type="button" class="btn-secondary" id="btnDownloadM3UHero">
       Скачать M3U плейлист
     </button>
+    ${stats.not_found > 0 ? `
+    <a href="/api/export/${state.jobId}/missing" download="missing_tracks_${state.jobId}.txt" class="btn-secondary" style="text-decoration: none; display: inline-flex; align-items: center; gap: 6px;">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+      <span>Экспорт ненайденных треков (${stats.not_found})</span>
+    </a>` : ''}
   `;
   document.getElementById('btnOpenAllHero').addEventListener('click', openAllLinksInTabs);
   document.getElementById('btnDownloadM3UHero').addEventListener('click', () => {

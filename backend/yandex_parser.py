@@ -55,6 +55,19 @@ DEMO_PLAYLISTS = {
     }
 }
 
+import subprocess
+
+def get_physical_en_ip() -> Optional[str]:
+    """Returns local physical LAN IP (e.g. from en0) on macOS to bypass foreign VPN tunnels for Yandex."""
+    for iface in ['en0', 'en1', 'en2']:
+        try:
+            out = subprocess.check_output(['ipconfig', 'getifaddr', iface], stderr=subprocess.DEVNULL).decode().strip()
+            if out:
+                return out
+        except Exception:
+            pass
+    return None
+
 class YandexMusicParser:
     def __init__(self):
         self._headers = {
@@ -63,6 +76,7 @@ class YandexMusicParser:
             "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
             "Referer": "https://music.yandex.ru/"
         }
+        self._local_ip = get_physical_en_ip()
 
     def _create_http_client(self, timeout: float = 12.0, follow_redirects: bool = True) -> httpx.AsyncClient:
         kwargs = {
@@ -72,6 +86,11 @@ class YandexMusicParser:
         }
         if config.YM_PROXY:
             kwargs["proxy"] = config.YM_PROXY
+        elif self._local_ip:
+            try:
+                kwargs["transport"] = httpx.AsyncHTTPTransport(local_address=self._local_ip)
+            except Exception:
+                pass
         return httpx.AsyncClient(**kwargs)
 
     def is_url(self, text: str) -> bool:
@@ -430,31 +449,39 @@ class YandexMusicParser:
         }
 
     async def search_track(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
-        """Searches Yandex Music catalog for tracks matching query."""
+        """Searches Yandex Music catalog for tracks matching query using modern API."""
         import urllib.parse
-        encoded_query = urllib.parse.quote(query)
-        endpoint = f"{YM_BASE_URL}/handlers/music-search.jsx?text={encoded_query}&type=tracks&lang=ru"
+        clean_q = query.strip()
+        if not clean_q:
+            return []
+
+        encoded_query = urllib.parse.quote(clean_q)
+        endpoint = f"https://api.music.yandex.net/search?text={encoded_query}&type=track&page=0"
         try:
             async with self._create_http_client(timeout=8.0) as client:
                 resp = await client.get(endpoint)
                 if resp.status_code == 200:
                     data = resp.json()
-                    items = (data.get("tracks") or {}).get("items") or []
+                    items = (data.get("result") or {}).get("tracks", {}).get("results") or []
                     results = []
                     for t in items[:limit]:
                         artists = ", ".join([a.get("name", "") for a in t.get("artists", []) if a.get("name")])
                         album = t.get("albums", [{}])[0] if t.get("albums") else {}
                         cover = t.get("coverUri") or ""
                         cover_url = f"https://{cover.replace('%%', '200x200')}" if cover else None
+                        dur_ms = t.get("durationMs", 0)
                         results.append({
                             "id": str(t.get("id")),
                             "title": t.get("title", ""),
                             "artist": artists,
                             "album_id": str(album.get("id", "")),
-                            "duration_ms": t.get("durationMs", 0),
-                            "cover_url": cover_url
+                            "duration_ms": dur_ms,
+                            "duration_sec": dur_ms // 1000,
+                            "cover_url": cover_url,
+                            "available": t.get("available", True),
+                            "permalink_url": f"https://music.yandex.ru/album/{album.get('id', '')}/track/{t.get('id')}"
                         })
                     return results
         except Exception as e:
-            logger.warning(f"Error searching YM catalog for '{query}': {e}")
+            logger.warning(f"Error searching YM catalog for '{clean_q}': {e}")
         return []

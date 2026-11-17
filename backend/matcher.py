@@ -74,9 +74,10 @@ def evaluate_candidate(
     ym_duration_sec: int,
     candidate: Dict[str, Any]
 ) -> Dict[str, Any]:
-    cand_duration_sec = candidate.get("duration", 0) // 1000
+    cand_duration_sec = candidate.get("duration_sec") or (candidate.get("duration", 0) // 1000) or (candidate.get("duration_ms", 0) // 1000)
     sc_title = candidate.get("title", "")
-    sc_author = candidate.get("user", {}).get("username", "") if isinstance(candidate.get("user"), dict) else ""
+    sc_author = candidate.get("artist") or candidate.get("author") or (candidate.get("user", {}).get("username", "") if isinstance(candidate.get("user"), dict) else "")
+    artwork = candidate.get("cover_url") or candidate.get("artwork_url") or (candidate.get("user") or {}).get("avatar_url")
 
     text_score = calculate_text_score(ym_artist, ym_title, sc_title, sc_author)
     duration_score = calculate_duration_score(ym_duration_sec, cand_duration_sec)
@@ -102,12 +103,15 @@ def evaluate_candidate(
 
     return {
         "id": candidate.get("id"),
+        "album_id": candidate.get("album_id", ""),
         "title": sc_title,
         "author": sc_author,
+        "artist": sc_author,
         "duration_sec": cand_duration_sec,
         "duration_diff": diff,
         "permalink_url": candidate.get("permalink_url", ""),
-        "artwork_url": candidate.get("artwork_url") or (candidate.get("user") or {}).get("avatar_url"),
+        "artwork_url": artwork,
+        "cover_url": artwork,
         "stream_url": candidate.get("stream_url", ""),
         "text_score": round(text_score * 100, 1),
         "duration_score": round(duration_score * 100, 1),

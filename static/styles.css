@@ -634,6 +634,111 @@ header {
   color: var(--text-muted);
 }
 
+/* Manual Search Drawer */
+.manual-search-drawer {
+  width: 100%;
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(14, 16, 22, 0.95);
+  border: 1px solid rgba(255, 204, 0, 0.25);
+  border-radius: 10px;
+  box-sizing: border-box;
+}
+
+.manual-search-bar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.manual-search-input {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--card-border);
+  color: var(--text-main);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+}
+.manual-search-input:focus {
+  border-color: var(--accent-ym);
+}
+
+.manual-search-btn {
+  background: var(--accent-ym);
+  color: #000;
+  border: none;
+  font-weight: 700;
+  font-size: 12.5px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+.manual-search-btn:hover {
+  opacity: 0.9;
+}
+
+.manual-suggestions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.manual-tag {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-muted);
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.manual-tag:hover {
+  color: var(--accent-ym);
+  border-color: var(--accent-ym);
+}
+
+.manual-results-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.manual-result-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border: 1px solid transparent;
+  transition: all 0.15s ease;
+}
+.manual-result-item:hover {
+  background: rgba(255, 204, 0, 0.08);
+  border-color: rgba(255, 204, 0, 0.25);
+}
+
+.manual-pick-btn {
+  background: rgba(255, 204, 0, 0.15);
+  border: 1px solid var(--accent-ym);
+  color: var(--accent-ym);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.manual-pick-btn:hover {
+  background: var(--accent-ym);
+  color: #000;
+}
+
 /* ==========================================================================
    Final Screen
    ========================================================================== */
