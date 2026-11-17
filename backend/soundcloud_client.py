@@ -308,3 +308,95 @@ class SoundCloudClient:
                 "success": False,
                 "error": f"Ошибка запроса: {e}"
             }
+
+    async def fetch_playlist(self, url_or_query: str) -> Dict[str, Any]:
+        """Fetches tracks from a SoundCloud playlist or user likes."""
+        import urllib.parse
+        
+        # Demo playlists for instant testing
+        demo_playlists = {
+            "demo-sc-top": {
+                "title": "SoundCloud Global Top & Phonk",
+                "tracks": [
+                    {"id": "sc-1", "title": "MURDER IN MY MIND", "artist": "KORDHELL", "duration_ms": 145000},
+                    {"id": "sc-2", "title": "METAMORPHOSIS", "artist": "INTERWORLD", "duration_ms": 143000},
+                    {"id": "sc-3", "title": "MIDNIGHT", "artist": "PLAYAMANE, Nateki", "duration_ms": 128000},
+                    {"id": "sc-4", "title": "After Dark", "artist": "Mr.Kitty", "duration_ms": 257000},
+                    {"id": "sc-5", "title": "Resonance", "artist": "HOME", "duration_ms": 212000},
+                    {"id": "sc-6", "title": "Starboy", "artist": "The Weeknd, Daft Punk", "duration_ms": 230000},
+                    {"id": "sc-7", "title": "Sweater Weather", "artist": "The Neighbourhood", "duration_ms": 240000},
+                    {"id": "sc-8", "title": "GOTH", "artist": "Sidewalks and Skeletons", "duration_ms": 152000}
+                ]
+            },
+            "demo-sc-chill": {
+                "title": "SoundCloud Lo-Fi & Chill",
+                "tracks": [
+                    {"id": "sc-10", "title": "Snowman", "artist": "WYS", "duration_ms": 180000},
+                    {"id": "sc-11", "title": "Affection", "artist": "Jinsang", "duration_ms": 140000},
+                    {"id": "sc-12", "title": "Controlla", "artist": "Idealism", "duration_ms": 170000},
+                    {"id": "sc-13", "title": "Again", "artist": "Wun Two", "duration_ms": 125000}
+                ]
+            }
+        }
+        
+        query_clean = url_or_query.strip().lower()
+        if query_clean in ("demo", "demo-sc", "demo-sc-top", "top", "хиты", "фонк", "phonk"):
+            demo = demo_playlists["demo-sc-top"]
+            return {"success": True, "title": demo["title"], "track_count": len(demo["tracks"]), "tracks": demo["tracks"]}
+        if query_clean in ("chill", "lofi", "чилл", "demo-sc-chill"):
+            demo = demo_playlists["demo-sc-chill"]
+            return {"success": True, "title": demo["title"], "track_count": len(demo["tracks"]), "tracks": demo["tracks"]}
+            
+        cid = await self.get_client_id()
+        client = await self.get_http_client()
+        clean_url = url_or_query.strip().split("?")[0]
+        
+        try:
+            resolve_url = f"https://api-v2.soundcloud.com/resolve?url={urllib.parse.quote(clean_url)}&client_id={cid}"
+            resp = await client.get(resolve_url)
+            if resp.status_code == 200:
+                data = resp.json()
+                title = data.get("title") or "Плейлист SoundCloud"
+                raw_tracks = data.get("tracks", [])
+                
+                # Check for stub IDs
+                missing_ids = [t["id"] for t in raw_tracks if isinstance(t, dict) and not t.get("title") and t.get("id")]
+                full_map = {t["id"]: t for t in raw_tracks if isinstance(t, dict) and t.get("title")}
+                
+                if missing_ids:
+                    chunk_size = 50
+                    for i in range(0, len(missing_ids), chunk_size):
+                        chunk = missing_ids[i:i+chunk_size]
+                        ids_str = "%2C".join(str(c) for c in chunk)
+                        tr_resp = await client.get(f"https://api-v2.soundcloud.com/tracks?ids={ids_str}&client_id={cid}")
+                        if tr_resp.status_code == 200:
+                            for tr in tr_resp.json():
+                                full_map[tr["id"]] = tr
+                                
+                formatted = []
+                for t in raw_tracks:
+                    tid = t.get("id") if isinstance(t, dict) else t
+                    ft = full_map.get(tid, t if isinstance(t, dict) else {})
+                    if ft.get("title"):
+                        formatted.append({
+                            "id": str(ft.get("id")),
+                            "title": ft.get("title", ""),
+                            "artist": ft.get("user", {}).get("username", ""),
+                            "duration_ms": ft.get("duration", 0),
+                            "permalink_url": ft.get("permalink_url", ""),
+                            "cover_url": ft.get("artwork_url", "")
+                        })
+                        
+                return {
+                    "success": True,
+                    "title": title,
+                    "track_count": len(formatted),
+                    "tracks": formatted
+                }
+            elif resp.status_code == 404:
+                return {"success": False, "error": "Плейлист SoundCloud не найден. Убедитесь, что ссылка верная и плейлист публичный."}
+            else:
+                return {"success": False, "error": f"Ошибка SoundCloud API: HTTP {resp.status_code}", "can_use_demo": True}
+        except Exception as e:
+            logger.warning(f"Error fetching SoundCloud playlist: {e}")
+            return {"success": False, "error": f"Не удалось подключиться к SoundCloud: {e}", "can_use_demo": True}

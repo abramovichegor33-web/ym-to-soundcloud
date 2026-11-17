@@ -31,8 +31,22 @@
     <!-- Main View (Screen 1: Setup & Input) -->
     <main id="screenSetup">
       <section class="hero">
-        <h1>Перенос плейлистов в SoundCloud</h1>
-        <p>Быстрый импорт музыки по публичной ссылке без авторизации и передачи паролей от аккаунтов.</p>
+        <h1 id="heroTitle">Перенос плейлистов в SoundCloud</h1>
+        <p id="heroSubtitle">Быстрый импорт музыки по публичной ссылке без авторизации и передачи паролей от аккаунтов.</p>
+
+        <!-- Direction Switcher -->
+        <div class="direction-container">
+          <div class="direction-pills" role="tablist">
+            <button type="button" class="dir-pill active" id="dirYmToSc" data-direction="ym_to_sc">
+              <span class="dir-icon-dot ym"></span>
+              <span>Яндекс ➔ SoundCloud</span>
+            </button>
+            <button type="button" class="dir-pill" id="dirScToYm" data-direction="sc_to_ym">
+              <span class="dir-icon-dot sc"></span>
+              <span>SoundCloud ➔ Яндекс</span>
+            </button>
+          </div>
+        </div>
       </section>
 
       <!-- Restore Previous Transfer Banner -->
@@ -47,20 +61,22 @@
 
       <div class="card">
         <!-- Mode Switcher -->
-        <label class="input-label">Режим переноса:</label>
-        <div class="mode-segmented-control" role="tablist">
-          <button type="button" class="mode-btn active" id="modeZeroLogin" data-mode="zero_login">
-            <span>Режим Zero-Login</span>
-            <span class="mode-badge">Без входа</span>
-          </button>
-          <button type="button" class="mode-btn" id="modeAutoPlaylist" data-mode="auto_playlist">
-            <span>Авто-сборка в SoundCloud</span>
-            <span class="mode-badge">По токену сессии</span>
-          </button>
+        <div id="modeSection">
+          <label class="input-label">Режим переноса:</label>
+          <div class="mode-segmented-control" role="tablist">
+            <button type="button" class="mode-btn active" id="modeZeroLogin" data-mode="zero_login">
+              <span>Режим Zero-Login</span>
+              <span class="mode-badge">Без входа</span>
+            </button>
+            <button type="button" class="mode-btn" id="modeAutoPlaylist" data-mode="auto_playlist">
+              <span>Авто-сборка в SoundCloud</span>
+              <span class="mode-badge">По токену сессии</span>
+            </button>
+          </div>
         </div>
 
         <!-- URL Input -->
-        <label for="playlistUrlInput" class="input-label">Ссылка на публичный плейлист Яндекс Музыки:</label>
+        <label for="playlistUrlInput" class="input-label" id="playlistUrlLabel">Ссылка на публичный плейлист Яндекс Музыки:</label>
         <div class="input-row">
           <input 
             type="text" 
@@ -75,16 +91,16 @@
             <span id="startBtnSpinner" class="spinner hidden"></span>
           </button>
         </div>
-        <div style="font-size: 11.5px; color: var(--text-muted); margin-top: -6px; margin-bottom: 12px;">
+        <div id="inputHelpText" style="font-size: 11.5px; color: var(--text-muted); margin-top: -6px; margin-bottom: 12px;">
           ✓ Поддерживаются: <code>playlists/lk...</code>, <code>users/.../playlists/...</code> и альбомы <code>album/...</code>
         </div>
 
         <!-- Sample Pills for 1-Click Testing -->
-        <div class="sample-pills">
+        <div class="sample-pills" id="samplePills">
           <span class="sample-label">Быстрый тест:</span>
-          <button type="button" class="pill-btn" data-url="demo-rock">🎸 Русский Рок & Инди</button>
-          <button type="button" class="pill-btn" data-url="demo-electro">🎧 Электроника & Hip-Hop</button>
-          <button type="button" class="pill-btn" data-url="https://music.yandex.ru/users/yamusic-top/playlists/1000">🔥 Чарт Яндекс Музыки</button>
+          <button type="button" class="pill-btn" data-url="demo-rock" id="pill1">🎸 Русский Рок & Инди</button>
+          <button type="button" class="pill-btn" data-url="demo-electro" id="pill2">🎧 Электроника & Hip-Hop</button>
+          <button type="button" class="pill-btn" data-url="https://music.yandex.ru/users/yamusic-top/playlists/1000" id="pill3">🔥 Чарт Яндекс Музыки</button>
         </div>
 
         <!-- Optional Session Token Box (shown when Auto-Assembly mode selected) -->
@@ -201,8 +217,8 @@
       <div class="card" id="cardAutoSave" style="border: 2px solid var(--accent-sc); background: rgba(255, 85, 0, 0.03); margin-bottom: 24px;">
         <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
           <div>
-            <h3 style="font-size: 17px; font-weight: 700; margin-bottom: 4px;">⚡ Собрать плейлист в SoundCloud</h3>
-            <p style="font-size: 13.5px; color: var(--text-muted); margin: 0;">
+            <h3 id="targetPlatformHeading" style="font-size: 17px; font-weight: 700; margin-bottom: 4px;">⚡ Собрать плейлист в SoundCloud</h3>
+            <p id="targetPlatformDesc" style="font-size: 13.5px; color: var(--text-muted); margin: 0;">
               Все подобранные треки будут добавлены в ваш профиль SoundCloud без ввода паролей.
             </p>
           </div>
@@ -236,11 +252,11 @@
               >
                 <span>⭐ Собрать плейлист в SoundCloud</span>
               </a>
-              <a href="https://soundcloud.com" target="_blank" class="btn-secondary" style="font-size: 13px; padding: 10px 16px; text-decoration: none;">
+              <a id="targetPlatformOpenLink" href="https://soundcloud.com" target="_blank" class="btn-secondary" style="font-size: 13px; padding: 10px 16px; text-decoration: none;">
                 Открыть SoundCloud ↗
               </a>
             </div>
-            <div style="font-size: 12.5px; color: var(--text-muted); margin-top: 12px; line-height: 1.5;">
+            <div id="bookmarkletStepGuide" style="font-size: 12.5px; color: var(--text-muted); margin-top: 12px; line-height: 1.5;">
               <strong>Инструкция в 2 простых шага:</strong><br>
               1. Перетащите кнопку <strong>«⭐ Собрать плейлист в SoundCloud»</strong> выше на панель закладок браузера (<kbd>Cmd + Shift + B</kbd>).<br>
               2. Откройте любую страницу SoundCloud и нажмите на неё — плейлист создастся автоматически!

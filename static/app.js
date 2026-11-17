@@ -7,6 +7,7 @@
 const state = {
   theme: localStorage.getItem('ym_sc_theme') || 'light',
   mode: 'zero_login',
+  direction: 'ym_to_sc', // 'ym_to_sc' or 'sc_to_ym'
   jobId: null,
   playlistTitle: '',
   tracks: [],
@@ -19,12 +20,64 @@ const state = {
 
 // DOM Elements
 const themeToggleBtn = document.getElementById('themeToggleBtn');
+const dirYmToScBtn = document.getElementById('dirYmToSc');
+const dirScToYmBtn = document.getElementById('dirScToYm');
+const heroTitle = document.getElementById('heroTitle');
+const heroSubtitle = document.getElementById('heroSubtitle');
+const playlistUrlLabel = document.getElementById('playlistUrlLabel');
+const playlistUrlInput = document.getElementById('playlistUrlInput');
+const inputHelpText = document.getElementById('inputHelpText');
+const pill1 = document.getElementById('pill1');
+const pill2 = document.getElementById('pill2');
+const pill3 = document.getElementById('pill3');
+const modeSection = document.getElementById('modeSection');
 const modeZeroLoginBtn = document.getElementById('modeZeroLogin');
 const modeAutoPlaylistBtn = document.getElementById('modeAutoPlaylist');
 const sessionTokenSection = document.getElementById('sessionTokenSection');
 const oauthTokenInput = document.getElementById('oauthTokenInput');
 const verifyTokenBtn = document.getElementById('verifyTokenBtn');
 const tokenVerifyStatus = document.getElementById('tokenVerifyStatus');
+
+function setDirection(dir) {
+  state.direction = dir;
+  if (dir === 'sc_to_ym') {
+    if (dirYmToScBtn) dirYmToScBtn.classList.remove('active');
+    if (dirScToYmBtn) dirScToYmBtn.classList.add('active');
+    if (heroTitle) heroTitle.textContent = 'Перенос плейлистов из SoundCloud в Яндекс Музыку';
+    if (heroSubtitle) heroSubtitle.textContent = 'Быстрый импорт музыки из SoundCloud в медиатеку Яндекс Музыки без передачи паролей.';
+    if (playlistUrlLabel) playlistUrlLabel.textContent = 'Ссылка на плейлист или лайки SoundCloud:';
+    if (playlistUrlInput) {
+      playlistUrlInput.placeholder = 'soundcloud.com/artist/sets/... или soundcloud.com/user/likes';
+    }
+    if (inputHelpText) {
+      inputHelpText.innerHTML = '✓ Поддерживаются: плейлисты <code>soundcloud.com/.../sets/...</code> и профили <code>soundcloud.com/...</code>';
+    }
+    if (pill1) { pill1.textContent = '🔥 SoundCloud Phonk & Top'; pill1.dataset.url = 'demo-sc-top'; }
+    if (pill2) { pill2.textContent = '🎧 Lo-Fi & Chill'; pill2.dataset.url = 'demo-sc-chill'; }
+    if (pill3) { pill3.textContent = '⚡ Хиты SoundCloud'; pill3.dataset.url = 'https://soundcloud.com/discover/sets/weekly'; }
+    if (modeSection) modeSection.classList.add('hidden');
+  } else {
+    if (dirScToYmBtn) dirScToYmBtn.classList.remove('active');
+    if (dirYmToScBtn) dirYmToScBtn.classList.add('active');
+    if (heroTitle) heroTitle.textContent = 'Перенос плейлистов в SoundCloud';
+    if (heroSubtitle) heroSubtitle.textContent = 'Быстрый импорт музыки по публичной ссылке без авторизации и передачи паролей от аккаунтов.';
+    if (playlistUrlLabel) playlistUrlLabel.textContent = 'Ссылка на публичный плейлист Яндекс Музыки:';
+    if (playlistUrlInput) {
+      playlistUrlInput.placeholder = 'music.yandex.ru/users/.../playlists/... или playlists/lk...';
+    }
+    if (inputHelpText) {
+      inputHelpText.innerHTML = '✓ Поддерживаются: <code>playlists/lk...</code>, <code>users/.../playlists/...</code> и альбомы <code>album/...</code>';
+    }
+    if (pill1) { pill1.textContent = '🎸 Русский Рок & Инди'; pill1.dataset.url = 'demo-rock'; }
+    if (pill2) { pill2.textContent = '🎧 Электроника & Hip-Hop'; pill2.dataset.url = 'demo-electro'; }
+    if (pill3) { pill3.textContent = '🔥 Чарт Яндекс Музыки'; pill3.dataset.url = 'https://music.yandex.ru/users/yamusic-top/playlists/1000'; }
+    if (modeSection) modeSection.classList.remove('hidden');
+  }
+  initBookmarklet();
+}
+
+if (dirYmToScBtn) dirYmToScBtn.addEventListener('click', () => setDirection('ym_to_sc'));
+if (dirScToYmBtn) dirScToYmBtn.addEventListener('click', () => setDirection('sc_to_ym'));
 const toggleGuideBtn = document.getElementById('toggleGuideBtn');
 const tokenGuideBox = document.getElementById('tokenGuideBox');
 
@@ -186,7 +239,7 @@ startTransferBtn.addEventListener('click', async () => {
     const parseRes = await fetch('/api/parse', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url })
+      body: JSON.stringify({ url, direction: state.direction })
     });
     const playlistData = await parseRes.json();
 
@@ -207,7 +260,8 @@ startTransferBtn.addEventListener('click', async () => {
       body: JSON.stringify({
         playlist_title: playlistData.title,
         cover_url: playlistData.cover_url,
-        tracks: playlistData.tracks
+        tracks: playlistData.tracks,
+        direction: state.direction
       })
     });
     const jobData = await jobRes.json();
@@ -305,13 +359,14 @@ function createCardElement(item) {
   card.className = 'track-card';
   card.id = `trackCard-${item.index}`;
   card.dataset.status = item.status;
+
+  const ym = item.ym_track || item.source_track || {};
+  const match = item.selected_match;
+  const alternatives = item.alternatives || [];
+
   if (match && match.id) {
     card.dataset.scId = match.id;
   }
-
-  const ym = item.ym_track;
-  const match = item.selected_match;
-  const alternatives = item.alternatives || [];
 
   const durSec = ym.duration_ms ? Math.round(ym.duration_ms / 1000) : 0;
   const durStr = durSec ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : '';
@@ -473,10 +528,56 @@ async function finishTransfer(stats) {
 
   initBookmarklet();
 
+  const isScToYm = state.direction === 'sc_to_ym';
+  const heading = document.getElementById('targetPlatformHeading');
+  const desc = document.getElementById('targetPlatformDesc');
+  const openLink = document.getElementById('targetPlatformOpenLink');
+  const stepGuide = document.getElementById('bookmarkletStepGuide');
+  const autoBtn = document.getElementById('autoBookmarkletBtn');
+
+  if (isScToYm) {
+    if (heading) heading.textContent = '⚡ Собрать плейлист в Яндекс Музыке';
+    if (desc) desc.textContent = 'Все подобранные треки будут добавлены в ваш профиль Яндекс Музыки без передачи паролей.';
+    if (openLink) {
+      openLink.textContent = 'Открыть Яндекс Музыку ↗';
+      openLink.href = 'https://music.yandex.ru';
+    }
+    if (stepGuide) {
+      stepGuide.innerHTML = `
+        <strong>Инструкция в 2 простых шага:</strong><br>
+        1. Перетащите кнопку <strong>«⭐ Собрать плейлист в Яндекс Музыке»</strong> выше на панель закладок (<kbd>Cmd + Shift + B</kbd>).<br>
+        2. Откройте любую страницу <strong>music.yandex.ru</strong> и нажмите на неё — плейлист создастся автоматически!
+      `;
+    }
+    if (autoBtn) {
+      autoBtn.style.background = '#FFCC00';
+      autoBtn.style.color = '#000';
+    }
+  } else {
+    if (heading) heading.textContent = '⚡ Собрать плейлист в SoundCloud';
+    if (desc) desc.textContent = 'Все подобранные треки будут добавлены в ваш профиль SoundCloud без ввода паролей.';
+    if (openLink) {
+      openLink.textContent = 'Открыть SoundCloud ↗';
+      openLink.href = 'https://soundcloud.com';
+    }
+    if (stepGuide) {
+      stepGuide.innerHTML = `
+        <strong>Инструкция в 2 простых шага:</strong><br>
+        1. Перетащите кнопку <strong>«⭐ Собрать плейлист в SoundCloud»</strong> выше на панель закладок (<kbd>Cmd + Shift + B</kbd>).<br>
+        2. Откройте любую страницу <strong>soundcloud.com</strong> и нажмите на неё — плейлист создастся автоматически!
+      `;
+    }
+    if (autoBtn) {
+      autoBtn.style.background = '#FF5500';
+      autoBtn.style.color = '#FFF';
+    }
+  }
+
+  const openLabel = isScToYm ? 'Открыть все треки в Яндекс Музыке' : 'Открыть все треки в SoundCloud';
   finalActionButtons.innerHTML = `
     <button type="button" class="btn-primary" id="btnOpenAllHero">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
-      <span>Открыть все треки в SoundCloud</span>
+      <span>${openLabel}</span>
     </button>
     <button type="button" class="btn-secondary" id="btnDownloadM3UHero">
       Скачать M3U плейлист
@@ -646,7 +747,21 @@ function initBookmarklet() {
   const btn = document.getElementById('autoBookmarkletBtn');
   if (!btn) return;
   const origin = window.location.origin;
-  const code = `(async function(){if(!location.hostname.includes('soundcloud.com')){alert('Откройте вкладку soundcloud.com перед нажатием!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,22,0.92);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:20px 24px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:320px;max-width:440px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';document.body.appendChild(t);const closeBtn='<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#999;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>';const dismiss=()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(-12px)';setTimeout(()=>{if(t&&t.parentNode)t.remove();},300);};t.innerHTML=closeBtn+'<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FF5500;font-weight:700;font-size:14px;">⚡ YM Transfer</span></div><div style="color:#AAA;font-size:13px;">Загрузка треков...</div>';document.getElementById('ym-sc-close').onclick=dismiss;try{let r=null;const eps=['${origin}/api/latest-export','http://localhost:8000/api/latest-export','http://127.0.0.1:8000/api/latest-export'];for(const ep of eps){try{const res=await fetch(ep);if(res.ok){r=res;break;}}catch(e){}}if(!r)throw new Error('Не удалось получить треки с сервера');const d=await r.json();const ids=d.track_ids||[];const title=d.playlist_title||'Мне нравится (YM)';if(!ids.length){t.innerHTML=closeBtn+'<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Нет треков для добавления</div><div style="color:#888;font-size:12px;">Сначала запустите подбор треков на сайте</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,5000);return;}let tok=null;const m=document.cookie.match(/oauth_token=([^;]+)/);if(m)tok=decodeURIComponent(m[1]);if(!tok){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.toLowerCase().includes('token')){const v=localStorage.getItem(k);if(v&&v.length>20){tok=v;break;}}}}if(!tok){t.innerHTML=closeBtn+'<div style="color:#FF3B30;font-weight:600;margin-bottom:4px;">✕ Вы не вошли в SoundCloud</div><div style="color:#AAA;font-size:12px;">Войдите в аккаунт на этой вкладке</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,6000);return;}let cid='cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';const scs=Array.from(document.querySelectorAll('script[src*="sndcdn.com"]'));for(const s of scs){const ma=s.src.match(/client_id=([a-zA-Z0-9]{32})/);if(ma){cid=ma[1];break;}}const sz=480;const cks=[];for(let i=0;i<ids.length;i+=sz)cks.push(ids.slice(i,i+sz));const cre=[];for(let i=0;i<cks.length;i++){const pt=cks.length===1?title:(title+' (Часть '+(i+1)+' из '+cks.length+')');t.innerHTML=closeBtn+'<div style="color:#FF5500;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Добавление в SoundCloud...</div><div style="color:#FFF;font-weight:600;font-size:13px;margin-bottom:10px;">Часть '+(i+1)+' из '+cks.length+' ('+cks[i].length+' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FF5500;height:100%;width:'+Math.round(((i+1)/cks.length)*100)+'%;transition:width 0.3s;"></div></div>';document.getElementById('ym-sc-close').onclick=dismiss;const pr=await fetch('https://api-v2.soundcloud.com/playlists?client_id='+cid,{method:'POST',headers:{'Authorization':'OAuth '+tok.replace(/^OAuth /i,''),'Content-Type':'application/json'},body:JSON.stringify({playlist:{title:pt,sharing:'public',tracks:cks[i]}})});if(!pr.ok)throw new Error('HTTP '+pr.status);const pd=await pr.json();cre.push(pd);}t.innerHTML=closeBtn+'<div style="color:#34C759;font-weight:700;font-size:15px;margin-bottom:6px;">✓ Добавлено '+ids.length+' треков в профиль!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист успешно создан в SoundCloud</div><a href="'+cre[0].permalink_url+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FF5500,#FF3300);color:#FFF;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,85,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,10000);}catch(e){t.innerHTML=closeBtn+'<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">'+e.message+'</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,6000);}})();`;
+  const isScToYm = state.direction === 'sc_to_ym';
+
+  const btnTextSpan = btn.querySelector('span');
+  if (btnTextSpan) {
+    btnTextSpan.textContent = isScToYm ? '⭐ Собрать плейлист в Яндекс Музыке' : '⭐ Собрать плейлист в SoundCloud';
+  }
+
+  let code = '';
+  if (isScToYm) {
+    // Yandex Music Bookmarklet
+    code = `(async function(){if(!location.hostname.includes('yandex.')){alert('Откройте вкладку music.yandex.ru перед нажатием!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,22,0.92);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:20px 24px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:320px;max-width:440px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';document.body.appendChild(t);const closeBtn='<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#999;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>';const dismiss=()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(-12px)';setTimeout(()=>{if(t&&t.parentNode)t.remove();},300);};t.innerHTML=closeBtn+'<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FFCC00;font-weight:700;font-size:14px;">⚡ SC ➔ Яндекс Музыка</span></div><div style="color:#AAA;font-size:13px;">Загрузка треков...</div>';document.getElementById('ym-sc-close').onclick=dismiss;try{let r=null;const eps=['${origin}/api/latest-export','http://localhost:8000/api/latest-export','http://127.0.0.1:8000/api/latest-export'];for(const ep of eps){try{const res=await fetch(ep);if(res.ok){r=res;break;}}catch(e){}}if(!r)throw new Error('Не удалось получить треки с сервера');const d=await r.json();const ymTracks=d.ym_tracks||[];const title=d.playlist_title||'SoundCloud плейлист';if(!ymTracks.length){t.innerHTML=closeBtn+'<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Нет треков для добавления</div><div style="color:#888;font-size:12px;">Сначала запустите подбор на сайте</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,5000);return;}t.innerHTML=closeBtn+'<div style="color:#FFCC00;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Добавление в Яндекс Музыку...</div><div style="color:#FFF;font-size:13px;margin-bottom:10px;">Подготовка '+ymTracks.length+' треков...</div>';document.getElementById('ym-sc-close').onclick=dismiss;let uid=null;try{const aRes=await fetch('/handlers/auth.jsx');if(aRes.ok){const aData=await aRes.json();uid=(aData.user&&aData.user.uid)||(aData.defaultUser&&aData.defaultUser.uid);}}catch(e){}if(!uid&&window.Mu&&window.Mu.user&&window.Mu.user.uid){uid=window.Mu.user.uid;}let targetUrl='/users/'+(uid||'me')+'/playlists';if(uid){try{const form=new URLSearchParams();form.append('title',title);form.append('visibility','public');const cRes=await fetch('/handlers/library.jsx?owner='+uid+'&action=create-playlist',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:form.toString()});if(cRes.ok){const cd=await cRes.json();const pk=(cd.playlist&&cd.playlist.kind)||cd.kind;if(pk){targetUrl='/users/'+uid+'/playlists/'+pk;const entries=ymTracks.map(tr=>({id:tr.id,albumId:tr.album_id||''}));await fetch('/handlers/playlist-patch.jsx?owner='+uid+'&kinds='+pk,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({diff:{op:'insert',at:0,tracks:entries}})});}}}catch(e){}}t.innerHTML=closeBtn+'<div style="color:#34C759;font-weight:700;font-size:15px;margin-bottom:6px;">✓ Добавлено '+ymTracks.length+' треков в Яндекс Музыку!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист успешно создан в вашем профиле</div><a href="'+targetUrl+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FFCC00,#FFAA00);color:#000;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,204,0,0.35);"><span>Открыть в Яндекс Музыке</span><span style="font-size:15px;">↗</span></a>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,10000);}catch(e){t.innerHTML=closeBtn+'<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">'+e.message+'</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,6000);}})();`;
+  } else {
+    // SoundCloud Bookmarklet
+    code = `(async function(){if(!location.hostname.includes('soundcloud.com')){alert('Откройте вкладку soundcloud.com перед нажатием!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,22,0.92);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:20px 24px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:320px;max-width:440px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';document.body.appendChild(t);const closeBtn='<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#999;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>';const dismiss=()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(-12px)';setTimeout(()=>{if(t&&t.parentNode)t.remove();},300);};t.innerHTML=closeBtn+'<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FF5500;font-weight:700;font-size:14px;">⚡ YM ➔ SoundCloud</span></div><div style="color:#AAA;font-size:13px;">Загрузка треков...</div>';document.getElementById('ym-sc-close').onclick=dismiss;try{let r=null;const eps=['${origin}/api/latest-export','http://localhost:8000/api/latest-export','http://127.0.0.1:8000/api/latest-export'];for(const ep of eps){try{const res=await fetch(ep);if(res.ok){r=res;break;}}catch(e){}}if(!r)throw new Error('Не удалось получить треки с сервера');const d=await r.json();const ids=d.track_ids||[];const title=d.playlist_title||'Мне нравится (YM)';if(!ids.length){t.innerHTML=closeBtn+'<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Нет треков для добавления</div><div style="color:#888;font-size:12px;">Сначала запустите подбор треков на сайте</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,5000);return;}let tok=null;const m=document.cookie.match(/oauth_token=([^;]+)/);if(m)tok=decodeURIComponent(m[1]);if(!tok){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.toLowerCase().includes('token')){const v=localStorage.getItem(k);if(v&&v.length>20){tok=v;break;}}}}if(!tok){t.innerHTML=closeBtn+'<div style="color:#FF3B30;font-weight:600;margin-bottom:4px;">✕ Вы не вошли в SoundCloud</div><div style="color:#AAA;font-size:12px;">Войдите в аккаунт на этой вкладке</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,6000);return;}let cid='cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';const scs=Array.from(document.querySelectorAll('script[src*="sndcdn.com"]'));for(const s of scs){const ma=s.src.match(/client_id=([a-zA-Z0-9]{32})/);if(ma){cid=ma[1];break;}}const sz=480;const cks=[];for(let i=0;i<ids.length;i+=sz)cks.push(ids.slice(i,i+sz));const cre=[];for(let i=0;i<cks.length;i++){const pt=cks.length===1?title:(title+' (Часть '+(i+1)+' из '+cks.length+')');t.innerHTML=closeBtn+'<div style="color:#FF5500;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Добавление в SoundCloud...</div><div style="color:#FFF;font-weight:600;font-size:13px;margin-bottom:10px;">Часть '+(i+1)+' из '+cks.length+' ('+cks[i].length+' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FF5500;height:100%;width:'+Math.round(((i+1)/cks.length)*100)+'%;transition:width 0.3s;"></div></div>';document.getElementById('ym-sc-close').onclick=dismiss;const pr=await fetch('https://api-v2.soundcloud.com/playlists?client_id='+cid,{method:'POST',headers:{'Authorization':'OAuth '+tok.replace(/^OAuth /i,''),'Content-Type':'application/json'},body:JSON.stringify({playlist:{title:pt,sharing:'public',tracks:cks[i]}})});if(!pr.ok)throw new Error('HTTP '+pr.status);const pd=await pr.json();cre.push(pd);}t.innerHTML=closeBtn+'<div style="color:#34C759;font-weight:700;font-size:15px;margin-bottom:6px;">✓ Добавлено '+ids.length+' треков в профиль!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист успешно создан в SoundCloud</div><a href="'+cre[0].permalink_url+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FF5500,#FF3300);color:#FFF;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,85,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,10000);}catch(e){t.innerHTML=closeBtn+'<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">'+e.message+'</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,6000);}})();`;
+  }
   btn.href = 'javascript:' + encodeURIComponent(code);
 }
 

@@ -428,3 +428,33 @@ class YandexMusicParser:
             "track_count": len(tracks),
             "tracks": tracks
         }
+
+    async def search_track(self, query: str, limit: int = 5) -> List[Dict[str, Any]]:
+        """Searches Yandex Music catalog for tracks matching query."""
+        import urllib.parse
+        encoded_query = urllib.parse.quote(query)
+        endpoint = f"{YM_BASE_URL}/handlers/music-search.jsx?text={encoded_query}&type=tracks&lang=ru"
+        try:
+            async with self._create_http_client(timeout=8.0) as client:
+                resp = await client.get(endpoint)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    items = (data.get("tracks") or {}).get("items") or []
+                    results = []
+                    for t in items[:limit]:
+                        artists = ", ".join([a.get("name", "") for a in t.get("artists", []) if a.get("name")])
+                        album = t.get("albums", [{}])[0] if t.get("albums") else {}
+                        cover = t.get("coverUri") or ""
+                        cover_url = f"https://{cover.replace('%%', '200x200')}" if cover else None
+                        results.append({
+                            "id": str(t.get("id")),
+                            "title": t.get("title", ""),
+                            "artist": artists,
+                            "album_id": str(album.get("id", "")),
+                            "duration_ms": t.get("durationMs", 0),
+                            "cover_url": cover_url
+                        })
+                    return results
+        except Exception as e:
+            logger.warning(f"Error searching YM catalog for '{query}': {e}")
+        return []

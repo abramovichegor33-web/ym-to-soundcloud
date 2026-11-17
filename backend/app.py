@@ -82,11 +82,13 @@ load_cache()
 # Pydantic schemas
 class ParseRequest(BaseModel):
     url: str
+    direction: Optional[str] = "ym_to_sc"
 
 class StartTransferRequest(BaseModel):
     playlist_title: str
     cover_url: Optional[str] = ""
     tracks: List[Dict[str, Any]]
+    direction: Optional[str] = "ym_to_sc"
 
 class SelectMatchRequest(BaseModel):
     job_id: str
@@ -105,10 +107,15 @@ class VerifyTokenRequest(BaseModel):
 
 @app.post("/api/parse")
 async def parse_playlist(req: ParseRequest):
-    """Parses a Yandex Music playlist by public link or demo keyword."""
+    """Parses a playlist from Yandex Music or SoundCloud based on direction/URL."""
     if not req.url:
         raise HTTPException(status_code=400, detail="Укажите ссылку на плейлист")
-    result = await ym_parser.fetch_playlist(req.url)
+    
+    clean_url = req.url.strip()
+    if req.direction == "sc_to_ym" or "soundcloud.com" in clean_url.lower() or clean_url.startswith("demo-sc"):
+        result = await sc_client.fetch_playlist(clean_url)
+    else:
+        result = await ym_parser.fetch_playlist(clean_url)
     return result
 
 @app.post("/api/verify-token")
@@ -151,13 +158,25 @@ async def run_search_worker(job_id: str):
             title = tr.get("title", "")
             duration_sec = tr.get("duration_ms", 0) // 1000
 
-            queries = generate_search_queries(artist, title)
-            candidates = await sc_client.search_smart_track(artist, title, queries)
+            direction = job.get("direction", "ym_to_sc")
+            if direction == "sc_to_ym":
+                # Searching Yandex Music for SoundCloud track
+                q = f"{artist} {title}".strip()
+                candidates = await ym_parser.search_track(q, limit=5)
+                if not candidates and title:
+                    candidates = await ym_parser.search_track(title, limit=5)
+            else:
+                # Searching SoundCloud for Yandex Music track
+                queries = generate_search_queries(artist, title)
+                candidates = await sc_client.search_smart_track(artist, title, queries)
+
             match_result = rank_and_select_best(artist, title, duration_sec, candidates)
 
             track_entry = {
                 "index": idx,
                 "ym_track": tr,
+                "source_track": tr,
+                "direction": direction,
                 "status": match_result["status"],
                 "status_label": match_result["status_label"],
                 "best_match": match_result["best_match"],
@@ -225,10 +244,12 @@ async def start_transfer(req: StartTransferRequest):
         raise HTTPException(status_code=400, detail="Список треков пуст")
 
     job_id = str(uuid.uuid4())[:8]
+    default_title = "Плейлист из SoundCloud" if req.direction == "sc_to_ym" else "Плейлист из Яндекс Музыки"
     jobs[job_id] = {
         "id": job_id,
-        "playlist_title": req.playlist_title or "Плейлист из Яндекс Музыки",
+        "playlist_title": req.playlist_title or default_title,
         "cover_url": req.cover_url or "",
+        "direction": req.direction or "ym_to_sc",
         "total_tracks": len(req.tracks),
         "completed_tracks": 0,
         "status": "pending",
@@ -433,12 +454,27 @@ async def get_latest_export():
             seen.add(tid)
             unique_ids.append(tid)
 
+    ym_tracks = []
+    for t in target_job.get("tracks", []):
+        m = t.get("selected_match") if t else None
+        if m and m.get("id"):
+            ym_tracks.append({
+                "id": str(m["id"]),
+                "album_id": str(m.get("album_id", "")),
+                "title": m.get("title", ""),
+                "artist": m.get("artist", "")
+            })
+
+    direction = target_job.get("direction", "ym_to_sc")
     res = JSONResponse({
         "success": True,
         "job_id": target_jid,
-        "playlist_title": target_job.get("playlist_title", "Мне нравится (YM)"),
+        "direction": direction,
+        "destination": "yandex" if direction == "sc_to_ym" else "soundcloud",
+        "playlist_title": target_job.get("playlist_title", "Плейлист"),
         "total_tracks": len(unique_ids),
-        "track_ids": unique_ids
+        "track_ids": unique_ids,
+        "ym_tracks": ym_tracks
     })
     res.headers["Access-Control-Allow-Origin"] = "*"
     res.headers["Access-Control-Allow-Private-Network"] = "true"

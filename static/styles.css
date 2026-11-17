@@ -762,3 +762,62 @@ header {
     justify-content: space-between;
   }
 }
+
+/* Direction Switcher */
+.direction-container {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 24px;
+}
+
+.direction-pills {
+  display: inline-flex;
+  background: var(--bg-card);
+  border: 1px solid var(--card-border);
+  border-radius: 30px;
+  padding: 5px;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+.dir-pill {
+  background: transparent;
+  border: none;
+  padding: 9px 20px;
+  border-radius: 24px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dir-pill:hover {
+  color: var(--text-main);
+}
+
+.dir-pill.active {
+  background: var(--card-border);
+  color: var(--text-main);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
+}
+
+.dir-icon-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.dir-icon-dot.ym {
+  background: #FFCC00;
+  box-shadow: 0 0 8px rgba(255, 204, 0, 0.6);
+}
+
+.dir-icon-dot.sc {
+  background: #FF5500;
+  box-shadow: 0 0 8px rgba(255, 85, 0, 0.6);
+}
