@@ -47,7 +47,7 @@ class SoundCloudClient:
         """Returns or creates a shared persistent HTTPX client with connection pooling."""
         if self._client is None or self._client.is_closed:
             limits = httpx.Limits(max_keepalive_connections=25, max_connections=40, keepalive_expiry=30.0)
-            timeout = httpx.Timeout(connect=5.0, read=5.0, write=5.0, pool=5.0)
+            timeout = httpx.Timeout(connect=15.0, read=20.0, write=15.0, pool=20.0)
             client_kwargs = {
                 "headers": self._headers,
                 "limits": limits,
@@ -347,13 +347,15 @@ class SoundCloudClient:
             demo = demo_playlists["demo-sc-chill"]
             return {"success": True, "title": demo["title"], "track_count": len(demo["tracks"]), "tracks": demo["tracks"]}
             
-        cid = await self.get_client_id()
-        client = await self.get_http_client()
         clean_url = url_or_query.strip().split("?")[0]
         
+        # 1. Try Direct API Resolution
         try:
+            cid = await self.get_client_id()
+            client = await self.get_http_client()
             resolve_url = f"https://api-v2.soundcloud.com/resolve?url={urllib.parse.quote(clean_url)}&client_id={cid}"
-            resp = await client.get(resolve_url)
+            resp = await client.get(resolve_url, timeout=12.0)
+            
             if resp.status_code == 200:
                 data = resp.json()
                 title = data.get("title") or "Плейлист SoundCloud"
@@ -365,14 +367,28 @@ class SoundCloudClient:
                 
                 if missing_ids:
                     chunk_size = 50
-                    for i in range(0, len(missing_ids), chunk_size):
-                        chunk = missing_ids[i:i+chunk_size]
+                    chunks = [missing_ids[i:i+chunk_size] for i in range(0, len(missing_ids), chunk_size)]
+                    
+                    async def fetch_chunk(chunk):
                         ids_str = "%2C".join(str(c) for c in chunk)
-                        tr_resp = await client.get(f"https://api-v2.soundcloud.com/tracks?ids={ids_str}&client_id={cid}")
-                        if tr_resp.status_code == 200:
-                            for tr in tr_resp.json():
-                                full_map[tr["id"]] = tr
-                                
+                        try:
+                            tr_resp = await client.get(
+                                f"https://api-v2.soundcloud.com/tracks?ids={ids_str}&client_id={cid}",
+                                timeout=12.0
+                            )
+                            if tr_resp.status_code == 200:
+                                return tr_resp.json()
+                        except Exception as ce:
+                            logger.warning(f"Error fetching track chunk from SC: {ce}")
+                        return []
+
+                    chunk_results = await asyncio.gather(*(fetch_chunk(c) for c in chunks), return_exceptions=True)
+                    for res in chunk_results:
+                        if isinstance(res, list):
+                            for tr in res:
+                                if isinstance(tr, dict) and tr.get("id"):
+                                    full_map[tr["id"]] = tr
+                                    
                 formatted = []
                 for t in raw_tracks:
                     tid = t.get("id") if isinstance(t, dict) else t
@@ -396,7 +412,28 @@ class SoundCloudClient:
             elif resp.status_code == 404:
                 return {"success": False, "error": "Плейлист SoundCloud не найден. Убедитесь, что ссылка верная и плейлист публичный."}
             else:
-                return {"success": False, "error": f"Ошибка SoundCloud API: HTTP {resp.status_code}", "can_use_demo": True}
-        except Exception as e:
-            logger.warning(f"Error fetching SoundCloud playlist: {e}")
-            return {"success": False, "error": f"Не удалось подключиться к SoundCloud: {e}", "can_use_demo": True}
+                logger.warning(f"SC API resolve returned {resp.status_code}, falling back to cloud...")
+        except Exception as direct_err:
+            logger.warning(f"Direct SoundCloud access encountered {type(direct_err).__name__}: {direct_err}")
+
+        # 2. Intelligent Cloud Fallback (Render US worker has direct, unblocked access to SoundCloud)
+        try:
+            logger.info("Attempting cloud fallback via Render deployment...")
+            async with httpx.AsyncClient(timeout=35.0) as cloud_client:
+                cloud_resp = await cloud_client.post(
+                    "https://ym-to-soundcloud.onrender.com/api/parse",
+                    json={"url": clean_url, "direction": "sc_to_ym"}
+                )
+                if cloud_resp.status_code == 200:
+                    cloud_data = cloud_resp.json()
+                    if cloud_data.get("success"):
+                        logger.info(f"Cloud fallback successfully parsed {cloud_data.get('track_count')} tracks!")
+                        return cloud_data
+        except Exception as cloud_err:
+            logger.warning(f"Cloud fallback also failed: {cloud_err}")
+
+        return {
+            "success": False,
+            "error": "Не удалось подключиться к SoundCloud (сеть недоступна или блокировка). Включите VPN или откройте https://ym-to-soundcloud.onrender.com",
+            "can_use_demo": True
+        }

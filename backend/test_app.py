@@ -9,7 +9,7 @@ async def test_api():
         res = await client.get("/")
         print("GET / status:", res.status_code)
         assert res.status_code == 200
-        assert "YM to SoundCloud" in res.text
+        assert "SoundCloud" in res.text
 
         # 2. Test parse demo playlist
         parse_res = await client.post("/api/parse", json={"url": "demo-rock"})

@@ -465,6 +465,12 @@ async def get_latest_export():
                 "artist": m.get("artist", "")
             })
 
+    raw_tracks = [
+        {"artist": t.get("artist", ""), "title": t.get("title", ""), "duration_ms": t.get("duration_ms", 0)}
+        for t in target_job.get("raw_tracks", [])
+        if isinstance(t, dict)
+    ]
+
     direction = target_job.get("direction", "ym_to_sc")
     res = JSONResponse({
         "success": True,
@@ -472,9 +478,10 @@ async def get_latest_export():
         "direction": direction,
         "destination": "yandex" if direction == "sc_to_ym" else "soundcloud",
         "playlist_title": target_job.get("playlist_title", "Плейлист"),
-        "total_tracks": len(unique_ids),
+        "total_tracks": len(unique_ids) if len(unique_ids) > 0 else len(raw_tracks),
         "track_ids": unique_ids,
-        "ym_tracks": ym_tracks
+        "ym_tracks": ym_tracks,
+        "raw_tracks": raw_tracks
     })
     res.headers["Access-Control-Allow-Origin"] = "*"
     res.headers["Access-Control-Allow-Private-Network"] = "true"
