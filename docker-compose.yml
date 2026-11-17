@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HOST=0.0.0.0
+      - PORT=8000
+      - YM_PROXY=${YM_PROXY:-}
+      - SC_PROXY=${SC_PROXY:-}
+      - PUBLIC_DOMAIN=${PUBLIC_DOMAIN:-}
+    volumes:
+      - app_cache:/app/.jobs_cache.json
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/').read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # Optional zero-config HTTPS reverse proxy with automatic Let's Encrypt SSL
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${PUBLIC_DOMAIN:-localhost}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  app_cache:
+  caddy_data:
+  caddy_config:

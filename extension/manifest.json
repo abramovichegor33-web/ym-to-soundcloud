@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "YM to SoundCloud 1-Click Bridge",
+  "version": "2.0",
+  "description": "Автоматический перенос плейлистов в профиль SoundCloud в 1 клик без паролей и без консоли.",
+  "permissions": ["cookies", "proxy"],
+  "host_permissions": [
+    "https://soundcloud.com/*",
+    "https://api-v2.soundcloud.com/*",
+    "http://localhost:8000/*",
+    "http://127.0.0.1:8000/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://localhost:8000/*", "http://127.0.0.1:8000/*"],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://soundcloud.com/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
