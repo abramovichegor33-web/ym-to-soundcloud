@@ -8,10 +8,17 @@
     const widget = document.createElement('div');
     widget.id = 'ym-sc-inpage-bridge';
     widget.innerHTML = `
-      <div id="ym-sc-pill" style="position: fixed; bottom: 30px; right: 30px; z-index: 999999; background: #FF5500; color: #FFF; padding: 12px 20px; border-radius: 30px; font-family: -apple-system, sans-serif; font-size: 13.5px; font-weight: 700; cursor: pointer; box-shadow: 0 8px 24px rgba(255,85,0,0.5); display: flex; align-items: center; gap: 8px; transition: transform 0.2s;">
-        <span>⚡ Собрать плейлист из Яндекс Музыки</span>
+      <div id="ym-sc-pill" style="position: fixed; bottom: 30px; right: 30px; z-index: 999999; background: rgba(18,18,22,0.92); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); color: #FFF; padding: 12px 18px; border-radius: 14px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13.5px; font-weight: 600; cursor: pointer; box-shadow: 0 12px 36px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.1); display: flex; align-items: center; gap: 10px; transition: all 0.25s ease;">
+        <span style="color: #FF5500; font-size: 15px;">⚡</span>
+        <span id="ym-sc-pill-text">Собрать плейлист из Яндекс Музыки</span>
+        <button type="button" id="ym-sc-pill-close" style="background: rgba(255,255,255,0.08); border: none; color: #888; width: 22px; height: 22px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 12px; margin-left: 4px;">✕</button>
       </div>
     `;
+
+    document.getElementById('ym-sc-pill-close').onclick = (e) => {
+      e.stopPropagation();
+      widget.remove();
+    };
 
     widget.addEventListener('click', async () => {
       const pill = document.getElementById('ym-sc-pill');
