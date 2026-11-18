@@ -1,18 +1,19 @@
 /**
- * SoundShift — Yandex Music ⇄ SoundCloud Transfer Utility
- * Vanilla ES6+ SPA Architecture • Linear/Raycast Dark Theme • Full Mock & Live SSE Support
+ * SoundShift — Перенос плейлистов Яндекс Музыка ⇄ SoundCloud
+ * Чистый Vanilla ES6+ SPA • Linear/Raycast Dark Theme • Полная поддержка живого SSE и тестового режима
  */
 
 (() => {
   'use strict';
 
-  // Global Application State
+  // Глобальное состояние приложения
   const state = {
     screen: 'setup', // 'setup' | 'progress' | 'final'
     direction: 'ym_to_sc', // 'ym_to_sc' | 'sc_to_ym'
     mode: 'zero_login', // 'zero_login' | 'auto_playlist'
+    oauthToken: '',
     jobId: null,
-    playlistTitle: 'Playlist',
+    playlistTitle: 'Плейлист',
     tracks: [],
     tracksMap: new Map(),
     activeFilter: 'all',
@@ -26,19 +27,19 @@
     }
   };
 
-  // DOM Elements Cache
+  // Кэш DOM элементов
   const DOM = {
     brandResetBtn: document.getElementById('brandResetBtn'),
     stepIndicator1: document.getElementById('stepIndicator1'),
     stepIndicator2: document.getElementById('stepIndicator2'),
     stepIndicator3: document.getElementById('stepIndicator3'),
 
-    // Screens
+    // Экраны
     screenSetup: document.getElementById('screenSetup'),
     screenProgress: document.getElementById('screenProgress'),
     screenFinal: document.getElementById('screenFinal'),
 
-    // Screen 1: Setup
+    // Экран 1: Настройка
     dirYmToSc: document.getElementById('dirYmToSc'),
     dirScToYm: document.getElementById('dirScToYm'),
     heroTitle: document.getElementById('heroTitle'),
@@ -66,7 +67,7 @@
     restoreJobCount: document.getElementById('restoreJobCount'),
     btnRestoreLatestJob: document.getElementById('btnRestoreLatestJob'),
 
-    // Screen 2: Progress & Tracklist
+    // Экран 2: Подбор треков
     progressPlaylistTitle: document.getElementById('progressPlaylistTitle'),
     progressStatusText: document.getElementById('progressStatusText'),
     progressCounter: document.getElementById('progressCounter'),
@@ -81,7 +82,7 @@
     countNotFound: document.getElementById('countNotFound'),
     trackListContainer: document.getElementById('trackListContainer'),
 
-    // Screen 3: Final
+    // Экран 3: Финал и экспорт
     finalStatsNumber: document.getElementById('finalStatsNumber'),
     finalStatsLabel: document.getElementById('finalStatsLabel'),
     statAccuracy: document.getElementById('statAccuracy'),
@@ -105,7 +106,7 @@
     btnOpenAllLinks: document.getElementById('btnOpenAllLinks'),
     btnTransferAnother: document.getElementById('btnTransferAnother'),
 
-    // Floating Player
+    // Плавающий мини-плеер
     audioPlayerBar: document.getElementById('audioPlayerBar'),
     playerCoverImg: document.getElementById('playerCoverImg'),
     playerTrackTitle: document.getElementById('playerTrackTitle'),
@@ -123,17 +124,15 @@
   };
 
   /* ==========================================================================
-     Screen & Step Transitions
+     Навигация и переключение экранов
      ========================================================================== */
   function navigateTo(screenName) {
     state.screen = screenName;
 
-    // Toggle Screen views
     DOM.screenSetup.classList.toggle('hidden', screenName !== 'setup');
     DOM.screenProgress.classList.toggle('hidden', screenName !== 'progress');
     DOM.screenFinal.classList.toggle('hidden', screenName !== 'final');
 
-    // Update Step Indicators
     DOM.stepIndicator1.className = 'step-item';
     DOM.stepIndicator2.className = 'step-item';
     DOM.stepIndicator3.className = 'step-item';
@@ -153,7 +152,7 @@
   }
 
   /* ==========================================================================
-     Direction & Mode Switching
+     Переключение направления и режима
      ========================================================================== */
   function setDirection(dir) {
     state.direction = dir;
@@ -162,38 +161,38 @@
     if (dir === 'sc_to_ym') {
       DOM.dirYmToSc.classList.remove('active');
       DOM.dirScToYm.classList.add('active');
-      DOM.heroTitle.textContent = 'Transfer Playlists to Yandex Music';
-      DOM.heroSubtitle.textContent = 'Seamlessly match and import tracks from SoundCloud into your Yandex Music library.';
-      DOM.playlistUrlLabel.textContent = 'SoundCloud Playlist or Likes URL';
-      DOM.playlistUrlInput.placeholder = 'https://soundcloud.com/artist/sets/... or soundcloud.com/user/likes';
-      DOM.inputHelpText.innerHTML = '<span class="help-text">Supported: <code>soundcloud.com/.../sets/...</code> and user profiles</span>';
+      DOM.heroTitle.textContent = 'Перенос плейлистов в Яндекс Музыку';
+      DOM.heroSubtitle.textContent = 'Быстрый импорт музыки из SoundCloud в медиатеку Яндекс Музыки без передачи паролей.';
+      DOM.playlistUrlLabel.textContent = 'Ссылка на плейлист или лайки SoundCloud:';
+      DOM.playlistUrlInput.placeholder = 'soundcloud.com/artist/sets/... или soundcloud.com/user/likes';
+      DOM.inputHelpText.innerHTML = '<span class="help-text">Поддерживаются: плейлисты <code>soundcloud.com/.../sets/...</code> и профили <code>soundcloud.com/...</code></span>';
       
-      DOM.pill1.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><span>Phonk & Drift Top</span>`;
+      DOM.pill1.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg><span>Phonk & Дрифт</span>`;
       DOM.pill1.dataset.url = 'demo-sc-phonk';
 
-      DOM.pill2.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg><span>Lo-Fi Chill Hop</span>`;
+      DOM.pill2.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg><span>Lo-Fi Chill & Beats</span>`;
       DOM.pill2.dataset.url = 'demo-sc-chill';
 
-      DOM.pill3.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg><span>SoundCloud Weekly</span>`;
+      DOM.pill3.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg><span>Хиты SoundCloud</span>`;
       DOM.pill3.dataset.url = 'https://soundcloud.com/discover/sets/weekly';
 
       if (DOM.modeSection) DOM.modeSection.classList.add('hidden');
     } else {
       DOM.dirScToYm.classList.remove('active');
       DOM.dirYmToSc.classList.add('active');
-      DOM.heroTitle.textContent = 'Transfer Playlists to SoundCloud';
-      DOM.heroSubtitle.textContent = 'Direct playlist conversion via public link with zero account credential sharing.';
-      DOM.playlistUrlLabel.textContent = 'Yandex Music Playlist or Album URL';
-      DOM.playlistUrlInput.placeholder = 'https://music.yandex.ru/users/.../playlists/... or playlists/lk...';
-      DOM.inputHelpText.innerHTML = '<span class="help-text">Supported: <code>playlists/...</code>, <code>users/.../playlists/...</code>, <code>album/...</code></span>';
+      DOM.heroTitle.textContent = 'Перенос плейлистов в SoundCloud';
+      DOM.heroSubtitle.textContent = 'Быстрый импорт музыки по публичной ссылке без авторизации и передачи паролей от аккаунтов.';
+      DOM.playlistUrlLabel.textContent = 'Ссылка на публичный плейлист или альбом Яндекс Музыки:';
+      DOM.playlistUrlInput.placeholder = 'music.yandex.ru/users/.../playlists/... или playlists/lk...';
+      DOM.inputHelpText.innerHTML = '<span class="help-text">Поддерживаются: <code>playlists/...</code>, <code>users/.../playlists/...</code> и альбомы <code>album/...</code></span>';
 
-      DOM.pill1.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg><span>Indie Rock & Wave</span>`;
+      DOM.pill1.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg><span>Русский Рок & Инди</span>`;
       DOM.pill1.dataset.url = 'demo-rock';
 
-      DOM.pill2.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg><span>Electronic & Beats</span>`;
+      DOM.pill2.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 18v-6a9 9 0 0 1 18 0v6"></path><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"></path></svg><span>Электроника & Hip-Hop</span>`;
       DOM.pill2.dataset.url = 'demo-electro';
 
-      DOM.pill3.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg><span>Top 100 Chart</span>`;
+      DOM.pill3.innerHTML = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"></path></svg><span>Чарт Топ-100</span>`;
       DOM.pill3.dataset.url = 'https://music.yandex.ru/users/yamusic-top/playlists/1000';
 
       if (DOM.modeSection) DOM.modeSection.classList.remove('hidden');
@@ -208,7 +207,7 @@
   }
 
   /* ==========================================================================
-     Clipboard & Quick-Test Listeners
+     Кнопка «Вставить» и быстрые чипы
      ========================================================================== */
   if (DOM.btnPasteClipboard) {
     DOM.btnPasteClipboard.addEventListener('click', async () => {
@@ -224,7 +223,6 @@
     });
   }
 
-  // Test chips auto-fill & trigger
   document.querySelectorAll('.chip-btn[data-url]').forEach(btn => {
     btn.addEventListener('click', () => {
       const url = btn.dataset.url;
@@ -234,7 +232,7 @@
   });
 
   /* ==========================================================================
-     Start Matching Execution (Live SSE or Fallback Mock Simulation)
+     Запуск сопоставления треков
      ========================================================================== */
   async function startMatching() {
     const rawUrl = DOM.playlistUrlInput.value.trim();
@@ -245,87 +243,128 @@
 
     DOM.startTransferBtn.disabled = true;
     DOM.startBtnSpinner.classList.remove('hidden');
-    DOM.startBtnText.textContent = 'Parsing tracks...';
+    DOM.startBtnText.textContent = 'Чтение плейлиста...';
 
     const isDemo = rawUrl.startsWith('demo-');
 
-    // If demo or backend unavailable, run realistic high-fidelity simulation
     if (isDemo) {
       runMockSimulation(rawUrl);
       return;
     }
 
     try {
+      // 1. Парсинг треков по ссылке
       const parseRes = await fetch('/api/parse', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: rawUrl, direction: state.direction })
       });
 
-      if (!parseRes.ok) throw new Error(`HTTP ${parseRes.status}`);
+      if (!parseRes.ok) throw new Error(`Ошибка сервера (HTTP ${parseRes.status})`);
       const playlistData = await parseRes.json();
 
       if (!playlistData.success) {
-        alert(playlistData.error || 'Could not parse playlist URL.');
+        alert(playlistData.error || 'Не удалось прочитать плейлист по этой ссылке.');
         resetStartButton();
         return;
       }
 
-      state.playlistTitle = playlistData.title || 'Imported Playlist';
+      state.playlistTitle = playlistData.title || (state.direction === 'sc_to_ym' ? 'SoundCloud плейлист' : 'Яндекс Музыка');
+      const tracksToProcess = playlistData.tracks || [];
 
-      const jobRes = await fetch('/api/jobs', {
+      if (!tracksToProcess.length) {
+        alert('В плейлисте не найдено треков для переноса.');
+        resetStartButton();
+        return;
+      }
+
+      DOM.startBtnText.textContent = 'Запуск поиска...';
+
+      // 2. Инициализация задачи на бэкенде (/api/start-transfer)
+      const jobRes = await fetch('/api/start-transfer', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          playlist_title: playlistData.title,
-          cover_url: playlistData.cover_url,
-          tracks: playlistData.tracks,
+          playlist_title: state.playlistTitle,
+          cover_url: playlistData.cover_url || '',
+          tracks: tracksToProcess,
           direction: state.direction
         })
       });
 
+      if (!jobRes.ok) throw new Error(`Ошибка создания задачи (HTTP ${jobRes.status})`);
       const jobData = await jobRes.json();
       state.jobId = jobData.job_id;
-      setupLiveSSE(state.jobId, playlistData.tracks.length);
+
+      // 3. Подключение к живому SSE потоку
+      setupLiveSSE(state.jobId, tracksToProcess.length);
     } catch (e) {
-      console.warn('Backend unavailable, running client-side simulation:', e);
-      runMockSimulation(rawUrl);
+      console.warn('Сервер вернул ошибку, запускаем режим эмуляции:', e);
+      alert('Ошибка при обращении к серверу: ' + e.message + '. Запускаем демонстрационный режим.');
+      runMockSimulation('demo-rock');
     }
   }
 
   function resetStartButton() {
     DOM.startTransferBtn.disabled = false;
     DOM.startBtnSpinner.classList.add('hidden');
-    DOM.startBtnText.textContent = 'Analyze & Match';
+    DOM.startBtnText.textContent = 'Подобрать треки';
   }
 
   /* ==========================================================================
-     Server-Sent Events (SSE) Live Feed
+     Подключение к живому SSE потоку (/api/transfer-stream/{job_id})
      ========================================================================== */
   function setupLiveSSE(jobId, expectedTotal) {
     initProgressScreen(expectedTotal);
     navigateTo('progress');
     resetStartButton();
 
-    const evtSource = new EventSource(`/api/jobs/${jobId}/events`);
+    const streamUrl = `/api/transfer-stream/${jobId}`;
+    const evtSource = new EventSource(streamUrl);
 
     evtSource.onmessage = (e) => {
       try {
         const data = JSON.parse(e.data);
-        if (data.type === 'track') {
-          handleTrackEvent(data.track, expectedTotal);
-        } else if (data.type === 'complete' || data.type === 'done') {
+
+        // Реальное событие одного трека от FastAPI: type === "track_completed"
+        if (data.type === 'track_completed' && data.track) {
+          handleTrackEvent(data.track, data.total || expectedTotal);
+        } else if (data.type === 'job_finished') {
           evtSource.close();
+          if (data.stats) {
+            state.stats.exact = data.stats.exact || state.stats.exact;
+            state.stats.fuzzy = data.stats.fuzzy || state.stats.fuzzy;
+            state.stats.not_found = data.stats.not_found || state.stats.not_found;
+          }
           onMatchingComplete();
         }
       } catch (err) {
-        console.error('SSE parse error:', err);
+        console.error('Ошибка разбора данных SSE:', err);
       }
     };
 
-    evtSource.onerror = (err) => {
-      console.warn('SSE stream closed:', err);
+    evtSource.onerror = async (err) => {
+      console.warn('SSE соединение разорвано или завершено:', err);
       evtSource.close();
+
+      // Проверяем, завершилась ли задача в фоновом кэше
+      try {
+        const checkRes = await fetch(`/api/export/${jobId}/json`);
+        if (checkRes.ok) {
+          const exportData = await checkRes.json();
+          if (exportData.tracks && exportData.tracks.length > 0) {
+            state.tracks = exportData.tracks;
+            state.tracksMap.clear();
+            exportData.tracks.forEach(t => state.tracksMap.set(t.index, t));
+            state.stats.total = exportData.tracks.length;
+            state.stats.completed = exportData.tracks.length;
+            state.stats.exact = exportData.tracks.filter(t => t.status === 'exact').length;
+            state.stats.fuzzy = exportData.tracks.filter(t => t.status === 'fuzzy').length;
+            state.stats.not_found = exportData.tracks.filter(t => t.status === 'not_found').length;
+          }
+        }
+      } catch(e) {}
+
       onMatchingComplete();
     };
   }
@@ -337,8 +376,8 @@
 
     DOM.progressPlaylistTitle.textContent = state.playlistTitle;
     DOM.progressStatusText.textContent = state.direction === 'sc_to_ym'
-      ? 'Searching tracks in Yandex Music...'
-      : 'Searching tracks in SoundCloud...';
+      ? 'Параллельный поиск в каталоге Яндекс Музыки...'
+      : 'Параллельный поиск в каталоге SoundCloud...';
     DOM.progressCounter.textContent = `0 / ${total}`;
     DOM.progressBar.style.width = '0%';
     DOM.trackListContainer.innerHTML = '';
@@ -355,16 +394,16 @@
     else if (tr.status === 'fuzzy') state.stats.fuzzy++;
     else state.stats.not_found++;
 
-    const pct = Math.round((state.stats.completed / total) * 100);
+    const safeTotal = Math.max(total, state.stats.completed);
+    const pct = Math.round((state.stats.completed / safeTotal) * 100);
     DOM.progressBar.style.width = `${pct}%`;
-    DOM.progressCounter.textContent = `${state.stats.completed} / ${total}`;
+    DOM.progressCounter.textContent = `${state.stats.completed} / ${safeTotal}`;
 
     updateFilterCounts();
 
     const row = createTrackRow(tr);
     DOM.trackListContainer.appendChild(row);
 
-    // Apply current filter visibility
     if (state.activeFilter !== 'all' && tr.status !== state.activeFilter) {
       row.classList.add('hidden');
     }
@@ -378,32 +417,36 @@
   }
 
   /* ==========================================================================
-     High-Fidelity Realistic Mock Simulation Data (For Demos & Zero Backend)
+     Реалистичный тестовый режим на русском языке
      ========================================================================== */
   function runMockSimulation(demoType) {
     const isSc = state.direction === 'sc_to_ym';
-    let demoTitle = 'Indie & Alternative Hits';
+    let demoTitle = 'Русский Рок & Инди';
     let mockList = [
-      { title: 'Sweater Weather', artist: 'The Neighbourhood', dur: 240, cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&auto=format&fit=crop&q=60' },
-      { title: 'Do I Wanna Know?', artist: 'Arctic Monkeys', dur: 272, cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=100&auto=format&fit=crop&q=60' },
-      { title: 'The Less I Know The Better', artist: 'Tame Impala', dur: 216, cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=100&auto=format&fit=crop&q=60' },
-      { title: 'Somebody Else', artist: 'The 1975', dur: 347, cover: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=100&auto=format&fit=crop&q=60' },
-      { title: 'Midnight City', artist: 'M83', dur: 243, cover: 'https://images.unsplash.com/photo-1487180144351-b8472da7d491?w=100&auto=format&fit=crop&q=60' },
-      { title: 'Take a Slice', artist: 'Glass Animals', dur: 255, cover: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=100&auto=format&fit=crop&q=60' },
-      { title: 'Breezeblocks', artist: 'alt-J', dur: 227, cover: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=100&auto=format&fit=crop&q=60' },
-      { title: 'Chamber of Reflection', artist: 'Mac DeMarco', dur: 231, cover: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=100&auto=format&fit=crop&q=60' },
-      { title: 'Electric Feel', artist: 'MGMT', dur: 229, cover: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=100&auto=format&fit=crop&q=60' },
-      { title: 'Supermassive Black Hole', artist: 'Muse', dur: 209, cover: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=100&auto=format&fit=crop&q=60' }
+      { title: 'Полковнику никто не пишет', artist: 'Би-2', dur: 295, cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&auto=format&fit=crop&q=60' },
+      { title: 'Группа крови', artist: 'Кино', dur: 285, cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=100&auto=format&fit=crop&q=60' },
+      { title: 'Моё сердце', artist: 'Сплин', dur: 249, cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=100&auto=format&fit=crop&q=60' },
+      { title: 'Выхода нет', artist: 'Сплин', dur: 231, cover: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=100&auto=format&fit=crop&q=60' },
+      { title: 'Лесник', artist: 'Король и Шут', dur: 192, cover: 'https://images.unsplash.com/photo-1487180144351-b8472da7d491?w=100&auto=format&fit=crop&q=60' },
+      { title: 'Кукла колдуна', artist: 'Король и Шут', dur: 203, cover: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=100&auto=format&fit=crop&q=60' },
+      { title: 'Владивосток 2000', artist: 'Мумий Тролль', dur: 158, cover: 'https://images.unsplash.com/photo-1518609878373-06d740f60d8b?w=100&auto=format&fit=crop&q=60' },
+      { title: 'Я остаюсь', artist: 'Чёрный Обелиск', dur: 260, cover: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=100&auto=format&fit=crop&q=60' }
     ];
 
     if (demoType === 'demo-electro') {
-      demoTitle = 'Electronic & Club Beats';
+      demoTitle = 'Электроника & Hip-Hop';
       mockList = [
         { title: 'One More Time', artist: 'Daft Punk', dur: 320, cover: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=100&auto=format&fit=crop&q=60' },
-        { title: 'Strobe', artist: 'deadmau5', dur: 637, cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=100&auto=format&fit=crop&q=60' },
-        { title: 'Opus', artist: 'Eric Prydz', dur: 220, cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&auto=format&fit=crop&q=60' },
-        { title: 'Sun & Moon', artist: 'Above & Beyond', dur: 325, cover: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=100&auto=format&fit=crop&q=60' },
-        { title: 'Language', artist: 'Porter Robinson', dur: 368, cover: 'https://images.unsplash.com/photo-1487180144351-b8472da7d491?w=100&auto=format&fit=crop&q=60' }
+        { title: 'Midnight City', artist: 'M83', dur: 243, cover: 'https://images.unsplash.com/photo-1487180144351-b8472da7d491?w=100&auto=format&fit=crop&q=60' },
+        { title: 'Language', artist: 'Porter Robinson', dur: 368, cover: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=100&auto=format&fit=crop&q=60' },
+        { title: 'Strobe', artist: 'deadmau5', dur: 637, cover: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&auto=format&fit=crop&q=60' }
+      ];
+    } else if (demoType === 'demo-sc-phonk') {
+      demoTitle = 'Phonk & Дрифт Top';
+      mockList = [
+        { title: 'Sahara', artist: 'Hensonn', dur: 171, cover: 'https://images.unsplash.com/photo-1498038432885-c6f3f1b912ee?w=100&auto=format&fit=crop&q=60' },
+        { title: 'Murder In My Mind', artist: 'KORDHELL', dur: 145, cover: 'https://images.unsplash.com/photo-1487180144351-b8472da7d491?w=100&auto=format&fit=crop&q=60' },
+        { title: 'Close Eyes', artist: 'DVRST', dur: 132, cover: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=100&auto=format&fit=crop&q=60' }
       ];
     }
 
@@ -426,18 +469,14 @@
       let diff = 0;
       let alternatives = [];
 
-      // Add realistic variety
-      if (currentIndex === 3 || currentIndex === 7) {
+      if (currentIndex === 3 || currentIndex === 6) {
         status = 'fuzzy';
         score = 92;
         diff = 2;
         alternatives = [
-          { title: `${item.title} (Official Audio)`, artist: item.artist, duration_sec: item.dur + 2, duration_diff: 2, composite_score: 92 },
-          { title: `${item.title} (Live)`, artist: item.artist, duration_sec: item.dur + 18, duration_diff: 18, composite_score: 78 }
+          { title: `${item.title} (Оригинальная версия)`, artist: item.artist, duration_sec: item.dur + 2, duration_diff: 2, composite_score: 92 },
+          { title: `${item.title} (Remastered)`, artist: item.artist, duration_sec: item.dur + 5, duration_diff: 5, composite_score: 84 }
         ];
-      } else if (currentIndex === 8 && mockList.length > 6) {
-        status = 'not_found';
-        score = 0;
       }
 
       const trackObj = {
@@ -451,7 +490,7 @@
         },
         selected_match: status !== 'not_found' ? {
           id: 100000000 + currentIndex,
-          title: status === 'fuzzy' ? `${item.title} (Re-upload)` : item.title,
+          title: status === 'fuzzy' ? `${item.title} (Перезалив)` : item.title,
           artist: item.artist,
           duration_sec: item.dur + diff,
           duration_diff: diff,
@@ -463,11 +502,11 @@
 
       handleTrackEvent(trackObj, mockList.length);
       currentIndex++;
-    }, 180);
+    }, 160);
   }
 
   /* ==========================================================================
-     DOM Construction: Interactive Track Row
+     Генерация HTML строки трека
      ========================================================================== */
   function createTrackRow(item) {
     const row = document.createElement('div');
@@ -483,30 +522,28 @@
     const durSec = src.duration_ms ? Math.round(src.duration_ms / 1000) : 0;
     const durStr = durSec ? `${Math.floor(durSec / 60)}:${(durSec % 60).toString().padStart(2, '0')}` : '';
 
-    // Status pill
     let pillHtml = '';
     if (item.status === 'exact') {
       pillHtml = `<span class="status-pill exact">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
-        <span>Exact Match</span>
+        <span>Точное</span>
       </span>`;
     } else if (item.status === 'fuzzy') {
-      const score = match ? `${match.composite_score}%` : 'Fuzzy';
+      const score = match ? `${match.composite_score}%` : '';
       pillHtml = `<span class="status-pill fuzzy">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-        <span>Fuzzy ${score}</span>
+        <span>Перезалив ${score}</span>
       </span>`;
     } else {
       pillHtml = `<span class="status-pill missing">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
-        <span>Missing</span>
+        <span>Не найден</span>
       </span>`;
     }
 
-    // Target match description
     let targetMatchHtml = '';
     if (match) {
-      const diffStr = match.duration_diff !== undefined ? `±${match.duration_diff}s` : '';
+      const diffStr = match.duration_diff !== undefined ? `±${match.duration_diff}с` : '';
       targetMatchHtml = `
         <div class="track-target-line">
           <span style="color:${isScToYm ? 'var(--accent-ym)' : 'var(--accent-sc)'};">●</span>
@@ -516,31 +553,28 @@
       `;
     }
 
-    // Alternative dropdown toggle button
     let altBtnHtml = '';
     if (alternatives.length > 0) {
       altBtnHtml = `
         <button type="button" class="row-action-btn" onclick="window.toggleAltMenu(${item.index})">
-          <span>Options (${alternatives.length})</span>
+          <span>Варианты (${alternatives.length})</span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="m6 9 6 6 6-6"></path></svg>
         </button>
       `;
     }
 
-    // Manual search button
     const manualBtnHtml = `
-      <button type="button" class="row-action-btn" onclick="window.toggleManualSearch(${item.index})" title="Search manually">
+      <button type="button" class="row-action-btn" onclick="window.toggleManualSearch(${item.index})" title="Ручной поиск">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <span>Search</span>
+        <span>Поиск</span>
       </button>
     `;
 
-    // Listen Link
     let listenLinkHtml = '';
     if (match && match.permalink_url) {
       listenLinkHtml = `
-        <a href="${match.permalink_url}" target="_blank" rel="noreferrer" class="row-action-btn" title="Open track">
-          <span>Listen</span>
+        <a href="${match.permalink_url}" target="_blank" rel="noreferrer" class="row-action-btn" title="Слушать трек">
+          <span>Слушать</span>
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 17 17 7"></path><path d="M7 7h10v10"></path></svg>
         </a>
       `;
@@ -556,8 +590,8 @@
         </div>
         <div class="track-info-col">
           <div class="track-source-line">
-            <span class="track-title">${escapeHtml(src.title || 'Unknown Title')}</span>
-            <span class="track-artist">${escapeHtml(src.artist || 'Unknown Artist')}</span>
+            <span class="track-title">${escapeHtml(src.title || 'Без названия')}</span>
+            <span class="track-artist">${escapeHtml(src.artist || 'Неизвестный артист')}</span>
             ${durStr ? `<span class="diff-tag">• ${durStr}</span>` : ''}
           </div>
           ${targetMatchHtml}
@@ -570,11 +604,11 @@
         ${manualBtnHtml}
       </div>
       <div class="alt-menu-drawer hidden" id="altMenu-${item.index}">
-        <div class="alt-menu-title">Select Alternative Match:</div>
+        <div class="alt-menu-title">Выберите подходящий вариант:</div>
         ${alternatives.map(alt => `
           <div class="alt-row-item" onclick="window.selectAltTrack(${item.index}, ${escapeJsonAttr(alt)})">
             <div class="alt-row-title">${escapeHtml(alt.title)} (${escapeHtml(alt.artist || alt.author || '')})</div>
-            <div class="alt-row-meta">${Math.floor(alt.duration_sec / 60)}:${(alt.duration_sec % 60).toString().padStart(2, '0')} • ${alt.composite_score}% match</div>
+            <div class="alt-row-meta">${Math.floor(alt.duration_sec / 60)}:${(alt.duration_sec % 60).toString().padStart(2, '0')} • ${alt.composite_score}% совпадение</div>
           </div>
         `).join('')}
       </div>
@@ -585,7 +619,7 @@
   }
 
   /* ==========================================================================
-     Filter Tabs Handlers
+     Фильтрация списка
      ========================================================================== */
   function applyFilter(filterType) {
     state.activeFilter = filterType;
@@ -610,33 +644,32 @@
   DOM.filterNotFound.addEventListener('click', () => applyFilter('not_found'));
 
   /* ==========================================================================
-     Screen 3: Completion & Assembly
+     Финал: Bento статистика и сборка плейлиста
      ========================================================================== */
   function onMatchingComplete() {
     const total = state.stats.total || state.tracks.length || 1;
     const found = state.stats.exact + state.stats.fuzzy;
     const accuracy = Math.round((found / total) * 100);
 
-    // Update Bento stats
     DOM.finalStatsNumber.textContent = `${found} / ${total}`;
     DOM.statAccuracy.textContent = `${accuracy}%`;
-    DOM.statTransferTime.textContent = total > 50 ? '< 20s' : '< 10s';
+    DOM.statTransferTime.textContent = total > 50 ? '< 20 сек' : '< 10 сек';
 
     const isScToYm = state.direction === 'sc_to_ym';
     if (isScToYm) {
-      DOM.targetPlatformHeading.textContent = 'Add to Yandex Music Library';
-      DOM.targetPlatformDesc.textContent = 'Drag the button below to your bookmarks bar, then click it on music.yandex.ru to auto-create the playlist.';
-      DOM.autoBookmarkletBtnText.textContent = 'Drag to Bookmarks: ★ Add to Yandex Music';
-      DOM.targetPlatformOpenLink.textContent = 'Open Yandex Music';
+      DOM.targetPlatformHeading.textContent = 'Собрать плейлист в Яндекс Музыке';
+      DOM.targetPlatformDesc.textContent = 'Перетащите кнопку ниже на панель закладок своего браузера, затем откройте music.yandex.ru и кликните по ней.';
+      DOM.autoBookmarkletBtnText.textContent = '⭐ Перетащите в закладки: Собрать плейлист в Яндекс Музыке';
+      DOM.targetPlatformOpenLink.textContent = 'Открыть Яндекс Музыку ↗';
       DOM.targetPlatformOpenLink.href = 'https://music.yandex.ru';
-      DOM.copyRunnerLabel.textContent = 'Or run 1 command in music.yandex.ru DevTools Console:';
+      DOM.copyRunnerLabel.textContent = 'Или выполните 1 команду в консоли браузера на music.yandex.ru:';
     } else {
-      DOM.targetPlatformHeading.textContent = 'Add to SoundCloud Library';
-      DOM.targetPlatformDesc.textContent = 'Drag the button below to your bookmarks bar, then click it on soundcloud.com to auto-create the playlist.';
-      DOM.autoBookmarkletBtnText.textContent = 'Drag to Bookmarks: ★ Add to SoundCloud';
-      DOM.targetPlatformOpenLink.textContent = 'Open SoundCloud';
+      DOM.targetPlatformHeading.textContent = 'Собрать плейлист в SoundCloud';
+      DOM.targetPlatformDesc.textContent = 'Перетащите кнопку ниже на панель закладок своего браузера, затем откройте soundcloud.com и кликните по ней.';
+      DOM.autoBookmarkletBtnText.textContent = '⭐ Перетащите в закладки: Собрать плейлист в SoundCloud';
+      DOM.targetPlatformOpenLink.textContent = 'Открыть SoundCloud ↗';
       DOM.targetPlatformOpenLink.href = 'https://soundcloud.com';
-      DOM.copyRunnerLabel.textContent = 'Or run 1 command in soundcloud.com DevTools Console:';
+      DOM.copyRunnerLabel.textContent = 'Или выполните 1 команду в консоли браузера на soundcloud.com:';
     }
 
     generateBookmarkletCode();
@@ -644,7 +677,7 @@
   }
 
   /* ==========================================================================
-     Verified Bookmarklet Code Generation (Zero-Login / Session Cookies)
+     Генерация скрипта сборки закладки (Zero-Login / Session Cookies)
      ========================================================================== */
   function generateBookmarkletCode() {
     const isScToYm = state.direction === 'sc_to_ym';
@@ -653,7 +686,6 @@
 
     let code = '';
     if (isScToYm) {
-      // Yandex Music runner: searches & inserts into user's profile via api.music.yandex.ru
       const ymTracks = allTracks.filter(t => t.selected_match && t.selected_match.id).map(t => ({
         id: String(t.selected_match.id),
         albumId: String(t.selected_match.album_id || t.selected_match.albumId || '')
@@ -664,18 +696,17 @@
         ym_tracks: ymTracks
       };
 
-      code = `(async function(){if(!location.hostname.includes('yandex.')){alert('Please open music.yandex.ru before clicking!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999999;background:#121215;border:1px solid #27272A;color:#FAFAFA;padding:16px 22px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,0.8);text-align:center;min-width:320px;';document.body.appendChild(t);t.innerHTML='<div style="font-weight:600;margin-bottom:4px;color:#FFCC00;">⚡ SoundShift ➔ Yandex Music</div><div>Creating playlist «${escapeHtml(title)}»...</div>';try{const d=${JSON.stringify(payload)};let cd=null;const m=document.cookie.match(/(?:^|;\\s*)yandex_login=([^;]+)/);const owner=m?decodeURIComponent(m[1]):'';const cr=await fetch('https://api.music.yandex.ru/users/'+encodeURIComponent(owner)+'/playlists/create',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest','Accept':'application/json'},credentials:'include',body:new URLSearchParams({title:d.title}).toString()});const cdata=await cr.json();cd=cdata.result||cdata.playlist||cdata;const pk=cd.kind||cd.playlist_id;let rev=cd.revision||0;const trs=d.ym_tracks||[];for(let i=0;i<trs.length;i+=40){const chunk=trs.slice(i,i+40);const diff=[{op:'insert',at:i,tracks:chunk.map(tr=>({id:String(tr.id),albumId:String(tr.albumId||'')}))}];await fetch('https://api.music.yandex.ru/users/'+encodeURIComponent(owner)+'/playlists/'+encodeURIComponent(pk)+'/change-relative',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},credentials:'include',body:new URLSearchParams({revision:String(rev),diff:JSON.stringify(diff)}).toString()});rev+=1;}t.innerHTML='<div style="color:#10B981;font-weight:600;">✓ Success! Created playlist with '+trs.length+' tracks.</div>';setTimeout(()=>{location.reload();},2000);}catch(err){t.innerHTML='<div style="color:#EF4444;">✕ Error: '+err.message+'</div>';setTimeout(()=>t.remove(),8000);}})();`;
+      code = `(async function(){if(!location.hostname.includes('yandex.')){alert('Пожалуйста, откройте вкладку music.yandex.ru перед нажатием!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999999;background:#121215;border:1px solid #27272A;color:#FAFAFA;padding:16px 22px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,0.8);text-align:center;min-width:320px;';document.body.appendChild(t);t.innerHTML='<div style="font-weight:600;margin-bottom:4px;color:#FFCC00;">⚡ SoundShift ➔ Яндекс Музыка</div><div>Создание плейлиста «${escapeHtml(title)}»...</div>';try{const d=${JSON.stringify(payload)};let cd=null;const m=document.cookie.match(/(?:^|;\\s*)yandex_login=([^;]+)/);const owner=m?decodeURIComponent(m[1]):'';const cr=await fetch('https://api.music.yandex.ru/users/'+encodeURIComponent(owner)+'/playlists/create',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest','Accept':'application/json'},credentials:'include',body:new URLSearchParams({title:d.title}).toString()});const cdata=await cr.json();cd=cdata.result||cdata.playlist||cdata;const pk=cd.kind||cd.playlist_id;let rev=cd.revision||0;const trs=d.ym_tracks||[];for(let i=0;i<trs.length;i+=40){const chunk=trs.slice(i,i+40);const diff=[{op:'insert',at:i,tracks:chunk.map(tr=>({id:String(tr.id),albumId:String(tr.albumId||'')}))}];await fetch('https://api.music.yandex.ru/users/'+encodeURIComponent(owner)+'/playlists/'+encodeURIComponent(pk)+'/change-relative',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},credentials:'include',body:new URLSearchParams({revision:String(rev),diff:JSON.stringify(diff)}).toString()});rev+=1;}t.innerHTML='<div style="color:#10B981;font-weight:600;">✓ Успешно! Создан плейлист с '+trs.length+' треками.</div>';setTimeout(()=>{location.reload();},2000);}catch(err){t.innerHTML='<div style="color:#EF4444;">✕ Ошибка: '+err.message+'</div>';setTimeout(()=>t.remove(),8000);}})();`;
     } else {
-      // SoundCloud runner: creates playlist using active OAuth token
       const scIds = allTracks.filter(t => t.selected_match && t.selected_match.id).map(t => t.selected_match.id);
-      code = `(async function(){if(!location.hostname.includes('soundcloud.com')){alert('Please open soundcloud.com before clicking!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999999;background:#121215;border:1px solid #27272A;color:#FAFAFA;padding:16px 22px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,0.8);text-align:center;min-width:320px;';document.body.appendChild(t);t.innerHTML='<div style="font-weight:600;margin-bottom:4px;color:#FF5500;">⚡ SoundShift ➔ SoundCloud</div><div>Creating playlist «${escapeHtml(title)}»...</div>';try{let tok=null;const m=document.cookie.match(/oauth_token=([^;]+)/);if(m)tok=decodeURIComponent(m[1]);if(!tok)throw new Error('Not logged in to SoundCloud');let cid='cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';const ids=${JSON.stringify(scIds)};const res=await fetch('https://api-v2.soundcloud.com/playlists?client_id='+cid,{method:'POST',headers:{'Authorization':'OAuth '+tok.replace(/^OAuth /i,''),'Content-Type':'application/json'},body:JSON.stringify({playlist:{title:${JSON.stringify(title)},sharing:'public',tracks:ids}})});if(!res.ok)throw new Error('HTTP '+res.status);const data=await res.json();t.innerHTML='<div style="color:#10B981;font-weight:600;">✓ Created playlist «${escapeHtml(title)}»!</div><a href="'+data.permalink_url+'" style="color:#FF5500;font-weight:600;margin-top:6px;display:inline-block;">Open Playlist ↗</a>';}catch(err){t.innerHTML='<div style="color:#EF4444;">✕ Error: '+err.message+'</div>';setTimeout(()=>t.remove(),8000);}})();`;
+      code = `(async function(){if(!location.hostname.includes('soundcloud.com')){alert('Пожалуйста, откройте вкладку soundcloud.com перед нажатием!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999999;background:#121215;border:1px solid #27272A;color:#FAFAFA;padding:16px 22px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,0.8);text-align:center;min-width:320px;';document.body.appendChild(t);t.innerHTML='<div style="font-weight:600;margin-bottom:4px;color:#FF5500;">⚡ SoundShift ➔ SoundCloud</div><div>Создание плейлиста «${escapeHtml(title)}»...</div>';try{let tok=null;const m=document.cookie.match(/oauth_token=([^;]+)/);if(m)tok=decodeURIComponent(m[1]);if(!tok)throw new Error('Вы не вошли в аккаунт на SoundCloud');let cid='cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';const ids=${JSON.stringify(scIds)};const res=await fetch('https://api-v2.soundcloud.com/playlists?client_id='+cid,{method:'POST',headers:{'Authorization':'OAuth '+tok.replace(/^OAuth /i,''),'Content-Type':'application/json'},body:JSON.stringify({playlist:{title:${JSON.stringify(title)},sharing:'public',tracks:ids}})});if(!res.ok)throw new Error('HTTP '+res.status);const data=await res.json();t.innerHTML='<div style="color:#10B981;font-weight:600;">✓ Создан плейлист «${escapeHtml(title)}»!</div><a href="'+data.permalink_url+'" style="color:#FF5500;font-weight:600;margin-top:6px;display:inline-block;">Открыть плейлист ↗</a>';}catch(err){t.innerHTML='<div style="color:#EF4444;">✕ Ошибка: '+err.message+'</div>';setTimeout(()=>t.remove(),8000);}})();`;
     }
 
     DOM.autoBookmarkletBtn.href = `javascript:${code}`;
     DOM.autoBookmarkletBtn.dataset.code = code;
   }
 
-  // Copy Console Script Button
+  // Копирование команды для консоли
   if (DOM.btnCopySCRunnerScript) {
     DOM.btnCopySCRunnerScript.addEventListener('click', async () => {
       const code = DOM.autoBookmarkletBtn.dataset.code || DOM.autoBookmarkletBtn.href.replace(/^javascript:/, '');
@@ -683,21 +714,21 @@
 
       try {
         await navigator.clipboard.writeText(code);
-        DOM.btnCopyRunnerText.textContent = 'Copied!';
+        DOM.btnCopyRunnerText.textContent = 'Скопировано!';
         DOM.copyRunnerSuccessAlert.classList.remove('hidden');
 
         setTimeout(() => {
-          DOM.btnCopyRunnerText.textContent = 'Copy Script';
+          DOM.btnCopyRunnerText.textContent = 'Скопировать команду';
           DOM.copyRunnerSuccessAlert.classList.add('hidden');
         }, 5000);
       } catch (err) {
-        alert('Could not copy to clipboard.');
+        alert('Не удалось скопировать в буфер обмена.');
       }
     });
   }
 
   /* ==========================================================================
-     Offline Export Handlers (.M3U, .TXT, .JSON, Open Tabs)
+     Экспорт файлов (.M3U, .TXT, .JSON, Открыть вкладки)
      ========================================================================== */
   DOM.btnExportM3U.addEventListener('click', () => {
     const valid = state.tracks.filter(t => t.selected_match);
@@ -724,13 +755,13 @@
   DOM.btnOpenAllLinks.addEventListener('click', () => {
     const valid = state.tracks.filter(t => t.selected_match && t.selected_match.permalink_url);
     if (!valid.length) {
-      alert('No matched tracks available.');
+      alert('Нет найденных треков для открытия.');
       return;
     }
     const limit = Math.min(valid.length, 15);
     valid.slice(0, limit).forEach(t => window.open(t.selected_match.permalink_url, '_blank'));
     if (valid.length > 15) {
-      alert(`Opened first 15 tracks (out of ${valid.length}) to prevent browser popup throttling.`);
+      alert(`Открыто первых 15 треков (из ${valid.length}), чтобы браузер не заблокировал всплывающие окна.`);
     }
   });
 
@@ -748,7 +779,7 @@
   }
 
   /* ==========================================================================
-     Floating Mini Audio Player Logic
+     Плавающий мини-плеер
      ========================================================================== */
   window.previewTrack = function(index) {
     const item = state.tracksMap.get(index);
@@ -758,8 +789,8 @@
     state.player.activeTrack = item;
     state.player.currentTime = 0;
 
-    DOM.playerTrackTitle.textContent = src.title || 'Track Preview';
-    DOM.playerArtistTitle.textContent = src.artist || 'Artist';
+    DOM.playerTrackTitle.textContent = src.title || 'Предпрослушивание';
+    DOM.playerArtistTitle.textContent = src.artist || 'Исполнитель';
     if (src.cover_url) {
       DOM.playerCoverImg.src = src.cover_url;
       DOM.playerCoverImg.classList.remove('hidden');
@@ -824,7 +855,7 @@
   });
 
   /* ==========================================================================
-     Alternatives Menu & Inline Manual Search
+     Меню альтернатив и ручной поиск
      ========================================================================== */
   window.toggleAltMenu = function(index) {
     const menu = document.getElementById(`altMenu-${index}`);
@@ -869,8 +900,8 @@
 
     drawer.innerHTML = `
       <div class="manual-search-bar">
-        <input type="text" id="manualInput-${index}" class="manual-input" value="${escapeHtml(defaultQ)}" placeholder="Search catalog...">
-        <button type="button" class="btn-secondary small" onclick="window.runManualSearch(${index})">Find</button>
+        <input type="text" id="manualInput-${index}" class="manual-input" value="${escapeHtml(defaultQ)}" placeholder="Поиск по названию или артисту...">
+        <button type="button" class="btn-secondary small" onclick="window.runManualSearch(${index})">Найти</button>
       </div>
       <div id="manualResults-${index}" style="margin-top:6px;"></div>
     `;
@@ -885,7 +916,7 @@
     const q = input.value.trim();
     if (!q) return;
 
-    resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Searching...</span>';
+    resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Поиск в каталоге...</span>';
 
     try {
       const res = await fetch('/api/search-manual', {
@@ -897,28 +928,69 @@
       const results = data.results || [];
 
       if (!results.length) {
-        resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">No results found.</span>';
+        resultsDiv.innerHTML = '<span style="font-size:11px;color:var(--text-muted);">Ничего не найдено.</span>';
         return;
       }
 
       resultsDiv.innerHTML = results.slice(0, 3).map(r => `
         <div class="alt-row-item" onclick="window.selectAltTrack(${index}, ${escapeJsonAttr(r)})">
           <div class="alt-row-title">${escapeHtml(r.title)} (${escapeHtml(r.artist || '')})</div>
-          <button type="button" class="btn-secondary small">Select</button>
+          <button type="button" class="btn-secondary small">Выбрать</button>
         </div>
       `).join('');
     } catch (e) {
       resultsDiv.innerHTML = `
-        <div class="alt-row-item" onclick="window.selectAltTrack(${index}, { title: '${escapeHtml(q)}', artist: 'Custom Match', duration_sec: 210, composite_score: 95 })">
-          <div class="alt-row-title">Match: ${escapeHtml(q)}</div>
-          <button type="button" class="btn-secondary small">Pick</button>
+        <div class="alt-row-item" onclick="window.selectAltTrack(${index}, { title: '${escapeHtml(q)}', artist: 'Пользовательский выбор', duration_sec: 210, composite_score: 95 })">
+          <div class="alt-row-title">Выбрать: ${escapeHtml(q)}</div>
+          <button type="button" class="btn-secondary small">Выбрать</button>
         </div>
       `;
     }
   };
 
   /* ==========================================================================
-     Helper Utilities
+     Восстановление предыдущего завершённого переноса
+     ========================================================================== */
+  async function checkPreviousJob() {
+    try {
+      const res = await fetch('/api/latest-export');
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data && data.total_tracks > 1 && data.job_id) {
+        if (DOM.restoreJobBanner && DOM.restoreJobTitle && DOM.restoreJobCount && DOM.btnRestoreLatestJob) {
+          DOM.restoreJobTitle.textContent = data.playlist_title || 'Предыдущий плейлист';
+          DOM.restoreJobCount.textContent = data.total_tracks;
+          DOM.restoreJobBanner.classList.remove('hidden');
+
+          DOM.btnRestoreLatestJob.onclick = async () => {
+            state.jobId = data.job_id;
+            state.playlistTitle = data.playlist_title || 'Плейлист';
+            try {
+              const fullRes = await fetch(`/api/export/${data.job_id}/json`);
+              if (fullRes.ok) {
+                const fullData = await fullRes.json();
+                state.tracks = fullData.tracks || [];
+                state.tracksMap.clear();
+                state.tracks.forEach(t => state.tracksMap.set(t.index, t));
+
+                state.stats.total = data.total_tracks;
+                state.stats.completed = data.total_tracks;
+                state.stats.exact = state.tracks.filter(t => t.status === 'exact').length;
+                state.stats.fuzzy = state.tracks.filter(t => t.status === 'fuzzy').length;
+                state.stats.not_found = state.tracks.filter(t => t.status === 'not_found').length;
+                onMatchingComplete();
+              }
+            } catch(err) {
+              console.error('Ошибка загрузки результатов:', err);
+            }
+          };
+        }
+      }
+    } catch(e) {}
+  }
+
+  /* ==========================================================================
+     Вспомогательные функции
      ========================================================================== */
   function escapeHtml(text) {
     if (!text) return '';
@@ -930,7 +1002,7 @@
   }
 
   function slugify(text) {
-    return (text || 'playlist').toLowerCase().replace(/[^a-z0-9_-]+/g, '_').slice(0, 40);
+    return (text || 'playlist').toLowerCase().replace(/[^a-zа-я0-9_-]+/g, '_').slice(0, 40);
   }
 
   function downloadFile(content, fileName, mimeType) {
@@ -947,16 +1019,28 @@
     }, 100);
   }
 
-  // Setup Event Listeners
+  // Обработка параметров URL (?token=...)
+  const urlParams = new URLSearchParams(window.location.search);
+  const queryToken = urlParams.get('token');
+  if (queryToken) {
+    state.oauthToken = queryToken;
+    localStorage.setItem('ym_sc_token', queryToken);
+    if (DOM.oauthTokenInput) DOM.oauthTokenInput.value = queryToken;
+    setMode('auto_playlist');
+    window.history.replaceState({}, document.title, window.location.pathname);
+  }
+
+  // Слушатели событий
   DOM.dirYmToSc.addEventListener('click', () => setDirection('ym_to_sc'));
   DOM.dirScToYm.addEventListener('click', () => setDirection('sc_to_ym'));
   if (DOM.modeZeroLogin) DOM.modeZeroLogin.addEventListener('click', () => setMode('zero_login'));
   if (DOM.modeAutoPlaylist) DOM.modeAutoPlaylist.addEventListener('click', () => setMode('auto_playlist'));
   DOM.startTransferBtn.addEventListener('click', startMatching);
 
-  // Initialize
+  // Инициализация
   setDirection('ym_to_sc');
   setMode('zero_login');
   navigateTo('setup');
+  checkPreviousJob();
 
 })();

@@ -250,6 +250,7 @@ async def run_search_worker(job_id: str):
         await queue_listener.put(final_event)
 
 @app.post("/api/start-transfer")
+@app.post("/api/jobs")
 async def start_transfer(req: StartTransferRequest):
     """Initializes a new transfer job and launches the background search worker."""
     if not req.tracks:
@@ -275,6 +276,7 @@ async def start_transfer(req: StartTransferRequest):
     return {"job_id": job_id, "total": len(req.tracks)}
 
 @app.get("/api/transfer-stream/{job_id}")
+@app.get("/api/jobs/{job_id}/events")
 async def transfer_stream(job_id: str, request: Request):
     """Server-Sent Events (SSE) endpoint for real-time live transfer updates."""
     job = jobs.get(job_id)
