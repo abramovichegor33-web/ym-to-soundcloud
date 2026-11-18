@@ -1013,10 +1013,10 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
 
     if (!numericUid) {
       const probes = [
+        'https://api.music.yandex.ru/users/' + encodeURIComponent(userLogin || 'fl0ffi'),
         '/handlers/playlist.jsx?owner=' + encodeURIComponent(userLogin || 'fl0ffi') + '&kinds=3',
         '/handlers/library.jsx?owner=' + encodeURIComponent(userLogin || 'fl0ffi'),
-        '/handlers/auth.jsx',
-        '/api/v2.1/handlers/account'
+        '/handlers/auth.jsx'
       ];
       for (const pu of probes) {
         try {
@@ -1041,46 +1041,37 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
     let activeOwner = null;
     let lastErr = '';
 
-    // Check if user is currently looking at a playlist page
+    // Check if user is currently looking at an open playlist page
     let currentUrlPk = null;
     try {
       const urlMatch = location.pathname.match(/\/(?:playlists|users\/[^/]+\/playlists)\/([a-zA-Z0-9_\-]+)/);
       if (urlMatch && urlMatch[1]) {
         currentUrlPk = urlMatch[1];
       }
-    } catch (e) {}
-
-    if (currentUrlPk) {
-      for (const owner of candidateOwners) {
-        try {
-          const res = await fetch('/handlers/playlist.jsx?owner=' + encodeURIComponent(owner) + '&kinds=' + encodeURIComponent(currentUrlPk), {
-            credentials: 'include',
-            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
-          });
-          if (res.ok) {
-            const data = await res.json();
-            const pl = data.playlist || data.result || data;
-            if (pl && (pl.trackCount === 0 || (Array.isArray(pl.tracks) && pl.tracks.length === 0) || (pl.title && pl.title.toLowerCase().trim() === title.toLowerCase().trim()))) {
-              cd = data;
-              pk = String(pl.kind || currentUrlPk);
-              rev = pl.revision !== undefined ? pl.revision : 0;
-              activeOwner = (pl.owner && (pl.owner.uid || pl.owner.login)) || pl.uid || owner;
-              break;
-            }
+      if (currentUrlPk) {
+        const scripts = Array.from(document.scripts).map(s => s.textContent || '').join('\n');
+        const pIdx = scripts.indexOf(currentUrlPk);
+        if (pIdx !== -1) {
+          const slice = scripts.substring(Math.max(0, pIdx - 600), Math.min(scripts.length, pIdx + 600));
+          const mKind = slice.match(/"kind"\s*:\s*(\d+)/i) || slice.match(/kind[^:]{0,10}:\s*"?(\d+)/i);
+          const mUid = slice.match(/"uid"\s*:\s*(\d+)/i) || slice.match(/uid[^:]{0,10}:\s*"?(\d+)/i);
+          const mRev = slice.match(/"revision"\s*:\s*(\d+)/i);
+          if (mKind && mKind[1]) {
+            pk = mKind[1];
+            if (mUid && mUid[1]) { numericUid = mUid[1]; activeOwner = mUid[1]; }
+            if (mRev && mRev[1]) rev = parseInt(mRev[1], 10);
           }
-        } catch (e) {}
+        }
       }
-    }
+    } catch (e) {}
 
     if (!pk) {
       for (const owner of candidateOwners) {
         const attempts = [
-          { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
-          { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', json: true },
-          { url: 'https://api.music.yandex.net/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
           { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
-          { url: '/handlers/library.jsx?owner=' + encodeURIComponent(owner) + '&action=create-playlist', form: true },
-          { url: '/api/v2.1/handlers/library.jsx?owner=' + encodeURIComponent(owner) + '&action=create-playlist', form: true }
+          { url: 'https://api.music.yandex.net/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+          { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+          { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(owner) + '/playlists/create', json: true }
         ];
 
         for (const att of attempts) {
@@ -1119,18 +1110,23 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
 
               let parsed = null;
               try { parsed = JSON.parse(text); } catch (e) {}
-              if (parsed) {
-                const p = parsed.result || parsed.playlist || parsed.data || parsed;
-                const foundKind = p.kind || p.playlist_id || p.id || p.uuid || parsed.kind;
-                if (foundKind) {
-                  cd = parsed;
-                  pk = String(foundKind);
-                  rev = p.revision !== undefined ? p.revision : (parsed.revision !== undefined ? parsed.revision : 0);
-                  activeOwner = (p.owner && (p.owner.uid || p.owner.login)) || p.uid || owner;
-                  break;
+              if (parsed && !parsed.error) {
+                const p = parsed.result || parsed.playlist || parsed.data;
+                if (p) {
+                  const foundKind = p.kind || p.playlist_id || p.id || p.uuid;
+                  if (foundKind) {
+                    cd = parsed;
+                    pk = String(foundKind);
+                    rev = p.revision !== undefined ? p.revision : 0;
+                    if (p.owner && p.owner.uid) numericUid = String(p.owner.uid);
+                    else if (p.uid) numericUid = String(p.uid);
+                    activeOwner = numericUid || (p.owner && p.owner.login) || owner;
+                    break;
+                  }
                 }
               }
-              lastErr = att.url + ' (' + res.status + '): ' + text.slice(0, 80);
+              const errTxt = (parsed && parsed.error && (parsed.error.message || parsed.error.name)) || text.slice(0, 80);
+              lastErr = att.url + ' (' + res.status + '): ' + errTxt;
             } catch (err) {
               lastErr = att.url + ' error: ' + err.message;
             }
@@ -1146,45 +1142,43 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
       throw new Error('Сервер Яндекса не создал плейлист. ' + (cleanErr || 'Проверьте аккаунт'));
     }
 
-    const candidateKinds = [pk];
+    const candidateKinds = [];
     if (cd) {
-      const p = cd.result || cd.playlist || cd.data || cd;
-      if (p.kind && !candidateKinds.includes(String(p.kind))) candidateKinds.unshift(String(p.kind));
-      if (p.uuid && !candidateKinds.includes(String(p.uuid))) candidateKinds.push(String(p.uuid));
+      const p = cd.result || cd.playlist || cd.data;
+      if (p && p.kind) candidateKinds.push(String(p.kind));
+      if (p && p.uuid && !candidateKinds.includes(String(p.uuid))) candidateKinds.push(String(p.uuid));
     }
+    if (pk && !candidateKinds.includes(pk)) candidateKinds.unshift(pk);
     if (currentUrlPk && !candidateKinds.includes(currentUrlPk)) candidateKinds.push(currentUrlPk);
 
     const patchOwners = [];
     if (cd) {
-      const p = cd.result || cd.playlist || cd.data || cd;
-      if (p.owner && p.owner.uid) patchOwners.push(String(p.owner.uid));
-      if (p.owner && p.owner.login) patchOwners.push(String(p.owner.login));
-      if (p.uid) patchOwners.push(String(p.uid));
+      const p = cd.result || cd.playlist || cd.data;
+      if (p && p.owner && p.owner.uid) patchOwners.push(String(p.owner.uid));
+      if (p && p.uid && !patchOwners.includes(String(p.uid))) patchOwners.push(String(p.uid));
     }
-    if (activeOwner && !patchOwners.includes(activeOwner)) patchOwners.push(activeOwner);
     if (numericUid && !patchOwners.includes(numericUid)) patchOwners.push(numericUid);
+    if (activeOwner && !patchOwners.includes(activeOwner)) patchOwners.push(activeOwner);
     if (userLogin && !patchOwners.includes(userLogin)) patchOwners.push(userLogin);
     if (!patchOwners.includes('fl0ffi')) patchOwners.push('fl0ffi');
 
+    // Sync revision and numerical kind info
     for (const pOwner of patchOwners) {
       for (const pKind of candidateKinds) {
         try {
-          const pCheck = await fetch('/handlers/playlist.jsx?owner=' + encodeURIComponent(pOwner) + '&kinds=' + encodeURIComponent(pKind), {
+          const pCheck = await fetch('https://api.music.yandex.ru/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind), {
             credentials: 'include',
             headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
           });
           if (pCheck.ok) {
-            const pcText = await pCheck.text();
-            if (pcText && !pcText.trim().startsWith('<')) {
-              const pcData = JSON.parse(pcText);
-              const pObj = pcData.playlist || pcData.result || pcData;
-              if (pObj) {
-                if (pObj.revision !== undefined) rev = pObj.revision;
-                if (pObj.kind && !candidateKinds.includes(String(pObj.kind))) candidateKinds.unshift(String(pObj.kind));
-                activeOwner = pOwner;
-                pk = String(pObj.kind || pKind);
-                break;
-              }
+            const pcData = await pCheck.json();
+            const pObj = pcData.result || pcData.playlist;
+            if (pObj) {
+              if (pObj.revision !== undefined) rev = pObj.revision;
+              if (pObj.kind && !candidateKinds.includes(String(pObj.kind))) candidateKinds.unshift(String(pObj.kind));
+              activeOwner = pOwner;
+              pk = String(pObj.kind || pKind);
+              break;
             }
           }
         } catch (e) {}
@@ -1207,10 +1201,12 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
       const diffObj = {
         op: 'insert',
         at: currentAt,
-        tracks: chunk.map(tr => ({
-          id: String(tr.id),
-          albumId: String(tr.albumId || tr.album_id || '')
-        }))
+        tracks: chunk.map(tr => {
+          const item = { id: String(tr.id) };
+          const aId = tr.albumId || tr.album_id;
+          if (aId) item.albumId = String(aId);
+          return item;
+        })
       };
       const diffArrayStr = JSON.stringify([diffObj]);
 
@@ -1219,27 +1215,36 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
         for (const pKind of candidateKinds) {
           const patchEndpoints = [
             {
-              url: '/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change',
+              url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
               type: 'form',
               body: () => {
                 const params = new URLSearchParams();
-                params.append('kind', pKind);
                 params.append('revision', String(rev));
                 params.append('diff', diffArrayStr);
                 return params.toString();
               }
             },
             {
-              url: '/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change',
-              type: 'json',
-              body: () => JSON.stringify({ kind: pKind, revision: rev, diff: [diffObj] })
-            },
-            {
-              url: '/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
+              url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change',
               type: 'form',
               body: () => {
                 const params = new URLSearchParams();
-                params.append('kind', pKind);
+                params.append('kind', String(pKind));
+                params.append('revision', String(rev));
+                params.append('diff', diffArrayStr);
+                return params.toString();
+              }
+            },
+            {
+              url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
+              type: 'json',
+              body: () => JSON.stringify({ diff: [diffObj], revision: rev })
+            },
+            {
+              url: 'https://api.music.yandex.net/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
+              type: 'form',
+              body: () => {
+                const params = new URLSearchParams();
                 params.append('revision', String(rev));
                 params.append('diff', diffArrayStr);
                 return params.toString();
@@ -1250,16 +1255,11 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
               type: 'form',
               body: () => {
                 const params = new URLSearchParams();
-                params.append('kind', pKind);
+                params.append('kind', String(pKind));
                 params.append('revision', String(rev));
                 params.append('diff', diffArrayStr);
                 return params.toString();
               }
-            },
-            {
-              url: '/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
-              type: 'json',
-              body: () => JSON.stringify({ kind: pKind, revision: rev, diff: [diffObj] })
             }
           ];
 
@@ -1283,11 +1283,13 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
               if (!pText || pText.trim().startsWith('<')) continue;
               let pData = null;
               try { pData = JSON.parse(pText); } catch (e) {}
-              if (pData) {
-                const pObj = pData.result || pData.playlist || pData.data || pData;
-                if (pObj && (pObj.revision !== undefined || pObj.trackCount !== undefined || pData.success || pData.invocationInfo)) {
+
+              // Strict verification of success: HTTP OK, no error field, and contains playlist/result object
+              if (patchRes.ok && pData && !pData.error) {
+                const pObj = pData.result || pData.playlist || pData.data;
+                if (pObj && (pObj.revision !== undefined || pObj.trackCount !== undefined || Array.isArray(pObj.tracks))) {
                   patched = true;
-                  if (pObj && pObj.revision !== undefined) rev = pObj.revision;
+                  if (pObj.revision !== undefined) rev = pObj.revision;
                   else rev += 1;
                   successCount += chunk.length;
                   currentAt += chunk.length;
@@ -1296,7 +1298,8 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
                   break;
                 }
               }
-              lastPatchErr = ep.url + ' (' + patchRes.status + '): ' + pText.slice(0, 80);
+              const errMsg = (pData && pData.error && (pData.error.message || pData.error.name)) || '';
+              lastPatchErr = ep.url + ' (' + patchRes.status + '): ' + (errMsg || pText.slice(0, 100));
             } catch (e) {
               lastPatchErr = ep.url + ' error: ' + e.message;
             }
@@ -1323,14 +1326,14 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
     document.getElementById('ym-sc-close').onclick = dismiss;
 
     if (location.pathname.includes('/playlists/')) {
-      setTimeout(() => { location.reload(); }, 1500);
+      setTimeout(() => { location.reload(); }, 1800);
     } else {
       setTimeout(dismiss, 12000);
     }
   } catch (e) {
     t.innerHTML = closeBtn + '<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">' + (e.message || 'Ошибка') + '</div>';
     document.getElementById('ym-sc-close').onclick = dismiss;
-    setTimeout(dismiss, 8000);
+    setTimeout(dismiss, 10000);
   }
 }
 
