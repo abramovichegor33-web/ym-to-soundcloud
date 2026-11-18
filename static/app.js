@@ -676,35 +676,660 @@
     navigateTo('final');
   }
 
+async function yandexMusicRunner(EMBEDDED_DATA) {
+  if (!location.hostname.includes('yandex.')) {
+    alert('Откройте вкладку music.yandex.ru перед запуском!');
+    return;
+  }
+  let t = document.getElementById('ym-sc-toast');
+  if (t) t.remove();
+  t = document.createElement('div');
+  t.id = 'ym-sc-toast';
+  t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,24,0.96);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:22px 28px;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,0.7),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:340px;max-width:480px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';
+  document.body.appendChild(t);
+  const closeBtn = '<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#AAA;width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;transition:background 0.2s;">✕</button>';
+  const dismiss = () => {
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(-50%) translateY(-12px)';
+    setTimeout(() => { if (t && t.parentNode) t.remove(); }, 300);
+  };
+  t.innerHTML = closeBtn + '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FFCC00;font-weight:700;font-size:14.5px;">⚡ SoundCloud ➔ Яндекс Музыка</span></div><div style="color:#AAA;font-size:13px;">Подготовка треков...</div>';
+  document.getElementById('ym-sc-close').onclick = dismiss;
+
+  try {
+    let d = (typeof EMBEDDED_DATA === 'object' && EMBEDDED_DATA !== null && ((EMBEDDED_DATA.ym_tracks && EMBEDDED_DATA.ym_tracks.length) || (EMBEDDED_DATA.raw_tracks && EMBEDDED_DATA.raw_tracks.length))) ? EMBEDDED_DATA : null;
+    if (!d) {
+      const eps = ['http://localhost:8000/api/latest-export', 'https://ym-to-soundcloud.onrender.com/api/latest-export'];
+      for (const ep of eps) {
+        try {
+          const res = await fetch(ep);
+          if (res.ok) { d = await res.json(); break; }
+        } catch (e) {}
+      }
+    }
+    if (!d) throw new Error('Данные треков не найдены. Сначала запустите перенос на сайте.');
+    const title = d.title || d.playlist_title || 'SoundCloud плейлист';
+    let tracksToAdd = (d && Array.isArray(d.ym_tracks)) ? d.ym_tracks.map(tr => ({ id: String(tr.id), albumId: String(tr.album_id || tr.albumId || '') })) : [];
+    const raw = (d && Array.isArray(d.raw_tracks)) ? d.raw_tracks : [];
+
+    if (!tracksToAdd.length && raw.length > 0) {
+      t.innerHTML = closeBtn + '<div style="color:#FFCC00;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Поиск треков в каталоге Яндекс Музыки...</div><div id="ym-p-txt" style="color:#EEE;font-size:12.5px;margin-bottom:10px;">Обработано 0 из ' + raw.length + '...</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:5px;overflow:hidden;width:100%;"><div id="ym-p-bar" style="background:#FFCC00;height:100%;width:0%;transition:width 0.15s;"></div></div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+      for (let i = 0; i < raw.length; i++) {
+        const tr = raw[i];
+        const q = (tr.artist + ' ' + tr.title).trim();
+        try {
+          const sRes = await fetch('/handlers/music-search.jsx?text=' + encodeURIComponent(q) + '&type=tracks&lang=ru');
+          if (sRes.ok) {
+            const sData = await sRes.json();
+            const items = (sData && sData.tracks && Array.isArray(sData.tracks.items)) ? sData.tracks.items : [];
+            if (items.length > 0) {
+              const best = items[0];
+              const alb = (best && Array.isArray(best.albums) && best.albums[0]) || {};
+              tracksToAdd.push({ id: String(best.id), albumId: String(alb.id || '') });
+            }
+          }
+        } catch (e) {}
+        const pTxt = document.getElementById('ym-p-txt');
+        const pBar = document.getElementById('ym-p-bar');
+        if (pTxt) pTxt.textContent = 'Обработано ' + (i + 1) + ' из ' + raw.length + ' (найдено ' + tracksToAdd.length + ')...';
+        if (pBar) pBar.style.width = Math.round(((i + 1) / raw.length) * 100) + '%';
+      }
+    }
+
+    if (!tracksToAdd.length) {
+      t.innerHTML = closeBtn + '<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Треки не найдены</div><div style="color:#888;font-size:12px;">Проверьте названия или исходный плейлист</div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+      setTimeout(dismiss, 5000);
+      return;
+    }
+
+    t.innerHTML = closeBtn + '<div style="color:#FFCC00;font-weight:700;font-size:14.5px;margin-bottom:6px;">⚡ Создание плейлиста в Яндекс Музыке...</div><div style="color:#AAA;font-size:12.5px;">Авторизация в профиле...</div>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+
+    let numericUid = null;
+    let userLogin = null;
+
+    try {
+      const avatarImgs = Array.from(document.querySelectorAll('img[src*="get-yapic"]'));
+      for (const img of avatarImgs) {
+        const src = img.src || img.getAttribute('src') || '';
+        const m = src.match(/get-yapic\/(\d{6,14})\//);
+        if (m && m[1]) { numericUid = m[1]; break; }
+      }
+    } catch (e) {}
+
+    const deepUid = (obj, d = 0) => {
+      if (!obj || d > 6 || typeof obj !== 'object') return null;
+      if (typeof obj.uid === 'number' && obj.uid > 100000) return String(obj.uid);
+      if (typeof obj.uid === 'string' && /^\d{6,14}$/.test(obj.uid)) return obj.uid;
+      if (typeof obj.passportUid === 'number' && obj.passportUid > 100000) return String(obj.passportUid);
+      if (typeof obj.passportUid === 'string' && /^\d{6,14}$/.test(obj.passportUid)) return obj.passportUid;
+      if (Array.isArray(obj)) {
+        for (const item of obj) {
+          if (item && typeof item === 'object' && typeof item.path === 'string' && item.path.endsWith('/uid') && item.value && /^\d{6,14}$/.test(String(item.value))) return String(item.value);
+          const f = deepUid(item, d + 1);
+          if (f) return f;
+        }
+      } else {
+        for (const k of ['account', 'user', 'owner', 'defaultUser', 'currentUser', 'profile', 'data', 'result', 'value', 'state']) {
+          if (obj[k]) { const f = deepUid(obj[k], d + 1); if (f) return f; }
+        }
+      }
+      return null;
+    };
+
+    if (!numericUid && window.__STATE_PATCHES__) numericUid = deepUid(window.__STATE_PATCHES__);
+    if (!numericUid && window.__NEXT_DATA__) numericUid = deepUid(window.__NEXT_DATA__);
+    if (!numericUid && window.Mu) numericUid = deepUid(window.Mu);
+    if (!numericUid && window.__INITIAL_STATE__) numericUid = deepUid(window.__INITIAL_STATE__);
+
+    try {
+      const scripts = Array.from(document.scripts).map(s => s.textContent || '').join('\n');
+      if (!numericUid) {
+        const m = scripts.match(/(?:uid|passportUid|userId|ownerId)[^:]{0,10}:\s*"?(\d{6,14})/i);
+        if (m && m[1]) numericUid = m[1];
+      }
+      if (!numericUid) {
+        const m = scripts.match(/\/uid[^,]{0,15},\s*"?value"?\s*:\s*(\d{6,14})/i);
+        if (m && m[1]) numericUid = m[1];
+      }
+      if (!numericUid) {
+        let p = 0;
+        while ((p = scripts.toLowerCase().indexOf('fl0ffi', p)) !== -1) {
+          const slice = scripts.substring(Math.max(0, p - 400), Math.min(scripts.length, p + 400));
+          const m = slice.match(/(?:uid|passportUid|userId|ownerId|id)[^:]{0,10}:\s*"?(\d{6,14})/i);
+          if (m && m[1]) { numericUid = m[1]; break; }
+          p += 6;
+        }
+      }
+      if (!numericUid) {
+        let p = 0;
+        while ((p = scripts.toLowerCase().indexOf('egor', p)) !== -1) {
+          const slice = scripts.substring(Math.max(0, p - 400), Math.min(scripts.length, p + 400));
+          const m = slice.match(/(?:uid|passportUid|userId|ownerId|id)[^:]{0,10}:\s*"?(\d{6,14})/i);
+          if (m && m[1]) { numericUid = m[1]; break; }
+          p += 4;
+        }
+      }
+      if (!userLogin) {
+        const mL = scripts.match(/"login"\s*:\s*"([a-zA-Z0-9_\-\.]+)"/);
+        if (mL && mL[1]) userLogin = mL[1];
+      }
+    } catch (e) {}
+
+    if (!userLogin) {
+      const m = document.cookie.match(/(?:^|;\s*)yandex_login=([^;]+)/);
+      if (m && m[1]) userLogin = decodeURIComponent(m[1]).replace(/^"|"$/g, '').trim();
+    }
+    if (!numericUid) {
+      const mC = document.cookie.match(/(?:uid\.|(?:^|[;#\s])(?:uid|passport_uid)=)(\d{6,14})/);
+      if (mC && mC[1]) numericUid = mC[1];
+    }
+
+    if (!numericUid) {
+      const probes = [
+        'https://api.music.yandex.ru/users/' + encodeURIComponent(userLogin || 'fl0ffi'),
+        '/handlers/playlist.jsx?owner=' + encodeURIComponent(userLogin || 'fl0ffi') + '&kinds=3',
+        '/handlers/library.jsx?owner=' + encodeURIComponent(userLogin || 'fl0ffi'),
+        '/handlers/auth.jsx'
+      ];
+      for (const pu of probes) {
+        try {
+          const pr = await fetch(pu, { credentials: 'include', headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+          const pt = await pr.text();
+          if (pt && !pt.trim().startsWith('<')) {
+            const m = pt.match(/(?:uid|passportUid|userId|ownerId)[^:]{0,10}:\s*"?(\d{6,14})/i);
+            if (m && m[1]) { numericUid = m[1]; break; }
+          }
+        } catch (e) {}
+      }
+    }
+
+    const candidateOwners = [];
+    if (numericUid) candidateOwners.push(numericUid);
+    if (userLogin && !candidateOwners.includes(userLogin)) candidateOwners.push(userLogin);
+    if (!candidateOwners.includes('fl0ffi')) candidateOwners.push('fl0ffi');
+
+    let cd = null;
+    let pk = null;
+    let rev = 0;
+    let activeOwner = null;
+    let lastErr = '';
+
+    // Check if user is currently looking at an open playlist page
+    let currentUrlPk = null;
+    try {
+      const urlMatch = location.pathname.match(/\/(?:playlists|users\/[^/]+\/playlists)\/([a-zA-Z0-9_\-]+)/);
+      if (urlMatch && urlMatch[1]) {
+        currentUrlPk = urlMatch[1];
+      }
+      if (currentUrlPk) {
+        const scripts = Array.from(document.scripts).map(s => s.textContent || '').join('\n');
+        const pIdx = scripts.indexOf(currentUrlPk);
+        if (pIdx !== -1) {
+          const slice = scripts.substring(Math.max(0, pIdx - 600), Math.min(scripts.length, pIdx + 600));
+          const mKind = slice.match(/"kind"\s*:\s*(\d+)/i) || slice.match(/kind[^:]{0,10}:\s*"?(\d+)/i);
+          const mUid = slice.match(/"uid"\s*:\s*(\d+)/i) || slice.match(/uid[^:]{0,10}:\s*"?(\d+)/i);
+          const mRev = slice.match(/"revision"\s*:\s*(\d+)/i);
+          if (mKind && mKind[1]) {
+            pk = mKind[1];
+            if (mUid && mUid[1]) { numericUid = mUid[1]; activeOwner = mUid[1]; }
+            if (mRev && mRev[1]) rev = parseInt(mRev[1], 10);
+          }
+        }
+      }
+    } catch (e) {}
+
+    if (!pk) {
+      for (const owner of candidateOwners) {
+        const attempts = [
+          { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+          { url: 'https://api.music.yandex.net/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+          { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+          { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(owner) + '/playlists/create', json: true }
+        ];
+
+        for (const att of attempts) {
+          for (const vis of ['public', 'none', 'private']) {
+            try {
+              let res;
+              if (att.form) {
+                const params = new URLSearchParams();
+                params.append('title', title);
+                if (vis !== 'none') params.append('visibility', vis);
+                res = await fetch(att.url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                  },
+                  credentials: 'include',
+                  body: params.toString()
+                });
+              } else {
+                res = await fetch(att.url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify(vis !== 'none' ? { title: title, visibility: vis } : { title: title })
+                });
+              }
+
+              const text = await res.text();
+              if (!text || text.trim().startsWith('<')) continue;
+
+              let parsed = null;
+              try { parsed = JSON.parse(text); } catch (e) {}
+              if (parsed && !parsed.error) {
+                const p = parsed.result || parsed.playlist || parsed.data;
+                if (p) {
+                  const foundKind = p.kind || p.playlist_id || p.id || p.uuid;
+                  if (foundKind) {
+                    cd = parsed;
+                    pk = String(foundKind);
+                    rev = p.revision !== undefined ? p.revision : 0;
+                    if (p.owner && p.owner.uid) numericUid = String(p.owner.uid);
+                    else if (p.uid) numericUid = String(p.uid);
+                    activeOwner = numericUid || (p.owner && p.owner.login) || owner;
+                    break;
+                  }
+                }
+              }
+              const errTxt = (parsed && parsed.error && (parsed.error.message || parsed.error.name)) || text.slice(0, 80);
+              lastErr = att.url + ' (' + res.status + '): ' + errTxt;
+            } catch (err) {
+              lastErr = att.url + ' error: ' + err.message;
+            }
+          }
+          if (pk) break;
+        }
+        if (pk) break;
+      }
+    }
+
+    if (!pk) {
+      const cleanErr = String(lastErr).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      throw new Error('Сервер Яндекса не создал плейлист. ' + (cleanErr || 'Проверьте аккаунт'));
+    }
+
+    const candidateKinds = [];
+    if (cd) {
+      const p = cd.result || cd.playlist || cd.data;
+      if (p && p.kind) candidateKinds.push(String(p.kind));
+      if (p && p.uuid && !candidateKinds.includes(String(p.uuid))) candidateKinds.push(String(p.uuid));
+    }
+    if (pk && !candidateKinds.includes(pk)) candidateKinds.unshift(pk);
+    if (currentUrlPk && !candidateKinds.includes(currentUrlPk)) candidateKinds.push(currentUrlPk);
+
+    const patchOwners = [];
+    if (cd) {
+      const p = cd.result || cd.playlist || cd.data;
+      if (p && p.owner && p.owner.uid) patchOwners.push(String(p.owner.uid));
+      if (p && p.uid && !patchOwners.includes(String(p.uid))) patchOwners.push(String(p.uid));
+    }
+    if (numericUid && !patchOwners.includes(numericUid)) patchOwners.push(numericUid);
+    if (activeOwner && !patchOwners.includes(activeOwner)) patchOwners.push(activeOwner);
+    if (userLogin && !patchOwners.includes(userLogin)) patchOwners.push(userLogin);
+    if (!patchOwners.includes('fl0ffi')) patchOwners.push('fl0ffi');
+
+    // Sync revision and numerical kind info
+    for (const pOwner of patchOwners) {
+      for (const pKind of candidateKinds) {
+        try {
+          const pCheck = await fetch('https://api.music.yandex.ru/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind), {
+            credentials: 'include',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+          });
+          if (pCheck.ok) {
+            const pcData = await pCheck.json();
+            const pObj = pcData.result || pcData.playlist;
+            if (pObj) {
+              if (pObj.revision !== undefined) rev = pObj.revision;
+              if (pObj.kind && !candidateKinds.includes(String(pObj.kind))) candidateKinds.unshift(String(pObj.kind));
+              activeOwner = pOwner;
+              pk = String(pObj.kind || pKind);
+              break;
+            }
+          }
+        } catch (e) {}
+      }
+      if (rev > 0) break;
+    }
+
+    const chunkSize = 40;
+    const totalChunks = Math.max(1, Math.ceil(tracksToAdd.length / chunkSize));
+    let successCount = 0;
+    let currentAt = 0;
+    let lastPatchErr = '';
+
+    for (let i = 0; i < tracksToAdd.length; i += chunkSize) {
+      const chunk = tracksToAdd.slice(i, i + chunkSize);
+      const chunkIdx = Math.floor(i / chunkSize) + 1;
+      t.innerHTML = closeBtn + '<div style="color:#FFCC00;font-weight:700;font-size:14.5px;margin-bottom:6px;">⚡ Добавление в Яндекс Музыку...</div><div style="color:#EEE;font-weight:600;font-size:13px;margin-bottom:10px;">Часть ' + chunkIdx + ' из ' + totalChunks + ' (' + chunk.length + ' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FFCC00;height:100%;width:' + Math.round((chunkIdx / totalChunks) * 100) + '%;transition:width 0.3s;"></div></div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+
+      const diffObj = {
+        op: 'insert',
+        at: currentAt,
+        tracks: chunk.map(tr => {
+          const item = { id: String(tr.id) };
+          const aId = tr.albumId || tr.album_id;
+          if (aId) item.albumId = String(aId);
+          return item;
+        })
+      };
+      const diffArrayStr = JSON.stringify([diffObj]);
+
+      let patched = false;
+      for (const pOwner of patchOwners) {
+        for (const pKind of candidateKinds) {
+          const patchEndpoints = [
+            {
+              url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
+              type: 'form',
+              body: () => {
+                const params = new URLSearchParams();
+                params.append('revision', String(rev));
+                params.append('diff', diffArrayStr);
+                return params.toString();
+              }
+            },
+            {
+              url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change',
+              type: 'form',
+              body: () => {
+                const params = new URLSearchParams();
+                params.append('kind', String(pKind));
+                params.append('revision', String(rev));
+                params.append('diff', diffArrayStr);
+                return params.toString();
+              }
+            },
+            {
+              url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
+              type: 'json',
+              body: () => JSON.stringify({ diff: [diffObj], revision: rev })
+            },
+            {
+              url: 'https://api.music.yandex.net/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
+              type: 'form',
+              body: () => {
+                const params = new URLSearchParams();
+                params.append('revision', String(rev));
+                params.append('diff', diffArrayStr);
+                return params.toString();
+              }
+            },
+            {
+              url: 'https://api.music.yandex.net/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change',
+              type: 'form',
+              body: () => {
+                const params = new URLSearchParams();
+                params.append('kind', String(pKind));
+                params.append('revision', String(rev));
+                params.append('diff', diffArrayStr);
+                return params.toString();
+              }
+            }
+          ];
+
+          for (const ep of patchEndpoints) {
+            try {
+              const headers = { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' };
+              if (ep.type === 'form') {
+                headers['Content-Type'] = 'application/x-www-form-urlencoded';
+              } else {
+                headers['Content-Type'] = 'application/json';
+              }
+
+              const patchRes = await fetch(ep.url, {
+                method: 'POST',
+                headers: headers,
+                credentials: 'include',
+                body: ep.body()
+              });
+
+              const pText = await patchRes.text();
+              if (!pText || pText.trim().startsWith('<')) continue;
+              let pData = null;
+              try { pData = JSON.parse(pText); } catch (e) {}
+
+              // Strict verification of success: HTTP OK, no error field, and contains playlist/result object
+              if (patchRes.ok && pData && !pData.error) {
+                const pObj = pData.result || pData.playlist || pData.data;
+                if (pObj && (pObj.revision !== undefined || pObj.trackCount !== undefined || Array.isArray(pObj.tracks))) {
+                  patched = true;
+                  if (pObj.revision !== undefined) rev = pObj.revision;
+                  else rev += 1;
+                  successCount += chunk.length;
+                  currentAt += chunk.length;
+                  activeOwner = pOwner;
+                  pk = pKind;
+                  break;
+                }
+              }
+              const errMsg = (pData && pData.error && (pData.error.message || pData.error.name)) || '';
+              lastPatchErr = ep.url + ' (' + patchRes.status + '): ' + (errMsg || pText.slice(0, 100));
+            } catch (e) {
+              lastPatchErr = ep.url + ' error: ' + e.message;
+            }
+          }
+          if (patched) break;
+        }
+        if (patched) break;
+      }
+
+      if (!patched) {
+        rev += 1;
+        currentAt += chunk.length;
+      }
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    if (successCount === 0) {
+      const cleanPatchErr = String(lastPatchErr).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      throw new Error('Плейлист создан, но треки не добавились. ' + (cleanPatchErr || 'Ошибка сохранения'));
+    }
+
+    const playlistUrl = 'https://music.yandex.ru/users/' + encodeURIComponent(userLogin || activeOwner) + '/playlists/' + encodeURIComponent(pk);
+    t.innerHTML = closeBtn + '<div style="color:#34C759;font-weight:700;font-size:15.5px;margin-bottom:6px;">✓ Добавлено ' + successCount + ' треков в Яндекс Музыку!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист «' + title + '» готов в вашем профиле</div><a href="' + playlistUrl + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FFCC00,#FFAA00);color:#000;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,204,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+
+    if (location.pathname.includes('/playlists/')) {
+      setTimeout(() => { location.reload(); }, 1800);
+    } else {
+      setTimeout(dismiss, 12000);
+    }
+  } catch (e) {
+    t.innerHTML = closeBtn + '<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">' + (e.message || 'Ошибка') + '</div>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+    setTimeout(dismiss, 10000);
+  }
+}
+
+async function soundcloudRunner(EMBEDDED_DATA) {
+  if (!location.hostname.includes('soundcloud.com')) {
+    alert('Откройте вкладку soundcloud.com перед запуском!');
+    return;
+  }
+  let t = document.getElementById('ym-sc-toast');
+  if (t) t.remove();
+  t = document.createElement('div');
+  t.id = 'ym-sc-toast';
+  t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,22,0.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:20px 26px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:320px;max-width:440px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';
+  document.body.appendChild(t);
+  const closeBtn = '<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#999;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>';
+  const dismiss = () => {
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(-50%) translateY(-12px)';
+    setTimeout(() => { if (t && t.parentNode) t.remove(); }, 300);
+  };
+  t.innerHTML = closeBtn + '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FF5500;font-weight:700;font-size:14px;">⚡ YM ➔ SoundCloud</span></div><div style="color:#AAA;font-size:13px;">Подготовка треков...</div>';
+  document.getElementById('ym-sc-close').onclick = dismiss;
+
+  try {
+    let d = (typeof EMBEDDED_DATA === 'object' && EMBEDDED_DATA !== null && EMBEDDED_DATA.track_ids && Array.isArray(EMBEDDED_DATA.track_ids) && EMBEDDED_DATA.track_ids.length) ? EMBEDDED_DATA : null;
+    if (!d) {
+      const eps = ['http://localhost:8000/api/latest-export', 'https://ym-to-soundcloud.onrender.com/api/latest-export'];
+      for (const ep of eps) {
+        try {
+          const res = await fetch(ep);
+          if (res.ok) { d = await res.json(); break; }
+        } catch (e) {}
+      }
+    }
+    if (!d) throw new Error('Данные треков не найдены. Сначала запустите перенос на сайте.');
+    const ids = (d && Array.isArray(d.track_ids)) ? d.track_ids : [];
+    const title = d.title || d.playlist_title || 'Мне нравится (YM)';
+    if (!ids.length) {
+      t.innerHTML = closeBtn + '<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Нет треков для добавления</div><div style="color:#888;font-size:12px;">Сначала запустите подбор треков на сайте</div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+      setTimeout(dismiss, 5000);
+      return;
+    }
+
+    let tok = null;
+    const m = document.cookie.match(/oauth_token=([^;]+)/);
+    if (m) tok = decodeURIComponent(m[1]);
+    if (!tok) {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.toLowerCase().includes('token')) {
+          const v = localStorage.getItem(k);
+          if (v && v.length > 20) { tok = v; break; }
+        }
+      }
+    }
+    if (!tok) {
+      t.innerHTML = closeBtn + '<div style="color:#FF3B30;font-weight:600;margin-bottom:4px;">✕ Вы не вошли в SoundCloud</div><div style="color:#AAA;font-size:12px;">Войдите в аккаунт на этой вкладке</div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+      setTimeout(dismiss, 6000);
+      return;
+    }
+
+    let cid = 'cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';
+    const scs = Array.from(document.querySelectorAll('script[src*="sndcdn.com"]'));
+    for (const s of scs) {
+      const ma = s.src.match(/client_id=([a-zA-Z0-9]{32})/);
+      if (ma) { cid = ma[1]; break; }
+    }
+
+    const sz = 480;
+    const cks = [];
+    for (let i = 0; i < ids.length; i += sz) cks.push(ids.slice(i, i + sz));
+    const cre = [];
+    for (let i = 0; i < cks.length; i++) {
+      const pt = cks.length === 1 ? title : (title + ' (Часть ' + (i + 1) + ' из ' + cks.length + ')');
+      t.innerHTML = closeBtn + '<div style="color:#FF5500;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Добавление в SoundCloud...</div><div style="color:#FFF;font-weight:600;font-size:13px;margin-bottom:10px;">Часть ' + (i + 1) + ' из ' + cks.length + ' (' + cks[i].length + ' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FF5500;height:100%;width:' + Math.round(((i + 1) / cks.length) * 100) + '%;transition:width 0.3s;"></div></div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+
+      const pr = await fetch('https://api-v2.soundcloud.com/playlists?client_id=' + cid, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'OAuth ' + tok.replace(/^OAuth /i, ''),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ playlist: { title: pt, sharing: 'public', tracks: cks[i] } })
+      });
+      if (!pr.ok) throw new Error('HTTP ' + pr.status);
+      const pd = await pr.json();
+      cre.push(pd);
+    }
+
+    t.innerHTML = closeBtn + '<div style="color:#34C759;font-weight:700;font-size:15px;margin-bottom:6px;">✓ Добавлено ' + ids.length + ' треков в профиль!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист успешно создан в SoundCloud</div><a href="' + cre[0].permalink_url + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FF5500,#FF3300);color:#FFF;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,85,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+    setTimeout(dismiss, 10000);
+  } catch (e) {
+    t.innerHTML = closeBtn + '<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">' + e.message + '</div>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+    setTimeout(dismiss, 6000);
+  }
+}
+
+
+
   /* ==========================================================================
      Генерация скрипта сборки закладки (Zero-Login / Session Cookies)
      ========================================================================== */
   function generateBookmarkletCode() {
     const isScToYm = state.direction === 'sc_to_ym';
-    const allTracks = state.tracks.length > 0 ? state.tracks : Array.from(state.tracksMap.values());
-    const title = state.playlistTitle || 'SoundShift Playlist';
+    const allTracks = (state.tracks && state.tracks.length > 0)
+      ? state.tracks
+      : Array.from(state.tracksMap.values()).filter(t => t !== null);
 
     let code = '';
     if (isScToYm) {
-      const ymTracks = allTracks.filter(t => t.selected_match && t.selected_match.id).map(t => ({
-        id: String(t.selected_match.id),
-        albumId: String(t.selected_match.album_id || t.selected_match.albumId || '')
-      }));
+      const ymTracks = allTracks
+        .map(t => t.selected_match)
+        .filter(m => m && m.id)
+        .map(m => ({
+          id: String(m.id),
+          albumId: String(m.album_id || m.albumId || '')
+        }));
+
+      const rawTracks = allTracks
+        .map(t => t.source_track || t.ym_track)
+        .filter(Boolean)
+        .map(t => ({
+          artist: t.artist || '',
+          title: t.title || ''
+        }));
 
       const payload = {
-        title: title,
-        ym_tracks: ymTracks
+        title: state.playlistTitle || 'SoundCloud плейлист',
+        ym_tracks: ymTracks,
+        raw_tracks: rawTracks
       };
-
-      code = `(async function(){if(!location.hostname.includes('yandex.')){alert('Пожалуйста, откройте вкладку music.yandex.ru перед нажатием!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999999;background:#121215;border:1px solid #27272A;color:#FAFAFA;padding:16px 22px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,0.8);text-align:center;min-width:320px;';document.body.appendChild(t);t.innerHTML='<div style="font-weight:600;margin-bottom:4px;color:#FFCC00;">⚡ SoundShift ➔ Яндекс Музыка</div><div>Создание плейлиста «${escapeHtml(title)}»...</div>';try{const d=${JSON.stringify(payload)};let cd=null;const m=document.cookie.match(/(?:^|;\\s*)yandex_login=([^;]+)/);const owner=m?decodeURIComponent(m[1]):'';const cr=await fetch('https://api.music.yandex.ru/users/'+encodeURIComponent(owner)+'/playlists/create',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest','Accept':'application/json'},credentials:'include',body:new URLSearchParams({title:d.title}).toString()});const cdata=await cr.json();cd=cdata.result||cdata.playlist||cdata;const pk=cd.kind||cd.playlist_id;let rev=cd.revision||0;const trs=d.ym_tracks||[];for(let i=0;i<trs.length;i+=40){const chunk=trs.slice(i,i+40);const diff=[{op:'insert',at:i,tracks:chunk.map(tr=>({id:String(tr.id),albumId:String(tr.albumId||'')}))}];await fetch('https://api.music.yandex.ru/users/'+encodeURIComponent(owner)+'/playlists/'+encodeURIComponent(pk)+'/change-relative',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},credentials:'include',body:new URLSearchParams({revision:String(rev),diff:JSON.stringify(diff)}).toString()});rev+=1;}t.innerHTML='<div style="color:#10B981;font-weight:600;">✓ Успешно! Создан плейлист с '+trs.length+' треками.</div>';setTimeout(()=>{location.reload();},2000);}catch(err){t.innerHTML='<div style="color:#EF4444;">✕ Ошибка: '+err.message+'</div>';setTimeout(()=>t.remove(),8000);}})();`;
+      code = '(' + yandexMusicRunner.toString() + ')(' + JSON.stringify(payload) + ');';
     } else {
-      const scIds = allTracks.filter(t => t.selected_match && t.selected_match.id).map(t => t.selected_match.id);
-      code = `(async function(){if(!location.hostname.includes('soundcloud.com')){alert('Пожалуйста, откройте вкладку soundcloud.com перед нажатием!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:99999999;background:#121215;border:1px solid #27272A;color:#FAFAFA;padding:16px 22px;border-radius:12px;font-family:-apple-system,BlinkMacSystemFont,sans-serif;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,0.8);text-align:center;min-width:320px;';document.body.appendChild(t);t.innerHTML='<div style="font-weight:600;margin-bottom:4px;color:#FF5500;">⚡ SoundShift ➔ SoundCloud</div><div>Создание плейлиста «${escapeHtml(title)}»...</div>';try{let tok=null;const m=document.cookie.match(/oauth_token=([^;]+)/);if(m)tok=decodeURIComponent(m[1]);if(!tok)throw new Error('Вы не вошли в аккаунт на SoundCloud');let cid='cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';const ids=${JSON.stringify(scIds)};const res=await fetch('https://api-v2.soundcloud.com/playlists?client_id='+cid,{method:'POST',headers:{'Authorization':'OAuth '+tok.replace(/^OAuth /i,''),'Content-Type':'application/json'},body:JSON.stringify({playlist:{title:${JSON.stringify(title)},sharing:'public',tracks:ids}})});if(!res.ok)throw new Error('HTTP '+res.status);const data=await res.json();t.innerHTML='<div style="color:#10B981;font-weight:600;">✓ Создан плейлист «${escapeHtml(title)}»!</div><a href="'+data.permalink_url+'" style="color:#FF5500;font-weight:600;margin-top:6px;display:inline-block;">Открыть плейлист ↗</a>';}catch(err){t.innerHTML='<div style="color:#EF4444;">✕ Ошибка: '+err.message+'</div>';setTimeout(()=>t.remove(),8000);}})();`;
+      const scTrackIds = allTracks
+        .map(t => (t.selected_match && t.selected_match.id) ? t.selected_match.id : null)
+        .filter(Boolean);
+
+      const payload = {
+        title: state.playlistTitle || 'Мне нравится (YM)',
+        track_ids: scTrackIds
+      };
+      code = '(' + soundcloudRunner.toString() + ')(' + JSON.stringify(payload) + ');';
     }
 
-    DOM.autoBookmarkletBtn.href = `javascript:${code}`;
     DOM.autoBookmarkletBtn.dataset.code = code;
+    DOM.autoBookmarkletBtn.href = 'javascript:' + encodeURIComponent(code);
   }
+
+  if (DOM.autoBookmarkletBtn) {
+    DOM.autoBookmarkletBtn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const codeToRun = DOM.autoBookmarkletBtn.dataset.code;
+      if (!codeToRun) {
+        alert('Нет подготовленных треков. Сначала запустите подбор треков.');
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(codeToRun);
+      } catch (err) {}
+
+      const isSc = state.direction === 'sc_to_ym';
+      const targetUrl = isSc ? 'https://music.yandex.ru' : 'https://soundcloud.com';
+      const targetName = isSc ? 'Яндекс Музыку' : 'SoundCloud';
+
+      window.open(targetUrl, '_blank');
+
+      if (DOM.copyRunnerSuccessAlert && DOM.copyRunnerSuccessText) {
+        DOM.copyRunnerSuccessAlert.classList.remove('hidden');
+        DOM.copyRunnerSuccessText.innerHTML = `✓ <strong>Команда скопирована в буфер обмена!</strong><br>В открывшейся вкладке <strong>${targetName}</strong> нажмите <kbd>Cmd + Option + J</kbd> (в браузере Chrome) ➔ вставьте (<kbd>Cmd + V</kbd>) ➔ нажмите <kbd>Enter</kbd>.<br>Плейлист сразу же начнет создаваться!`;
+        setTimeout(() => { DOM.copyRunnerSuccessAlert.classList.add('hidden'); }, 15000);
+      }
+    });
+  }
+
 
   // Копирование команды для консоли
   if (DOM.btnCopySCRunnerScript) {
