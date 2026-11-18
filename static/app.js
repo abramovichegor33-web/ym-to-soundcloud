@@ -860,6 +860,434 @@ async function checkPreviousJob() {
   } catch (e) {}
 }
 
+async function yandexMusicRunner(EMBEDDED_DATA) {
+  if (!location.hostname.includes('yandex.')) {
+    alert('Откройте вкладку music.yandex.ru перед запуском!');
+    return;
+  }
+  let t = document.getElementById('ym-sc-toast');
+  if (t) t.remove();
+  t = document.createElement('div');
+  t.id = 'ym-sc-toast';
+  t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,24,0.96);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:22px 28px;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,0.7),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:340px;max-width:480px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';
+  document.body.appendChild(t);
+  const closeBtn = '<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#AAA;width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;transition:background 0.2s;">✕</button>';
+  const dismiss = () => {
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(-50%) translateY(-12px)';
+    setTimeout(() => { if (t && t.parentNode) t.remove(); }, 300);
+  };
+  t.innerHTML = closeBtn + '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FFCC00;font-weight:700;font-size:14.5px;">⚡ SoundCloud ➔ Яндекс Музыка</span></div><div style="color:#AAA;font-size:13px;">Подготовка треков...</div>';
+  document.getElementById('ym-sc-close').onclick = dismiss;
+
+  try {
+    let d = (typeof EMBEDDED_DATA === 'object' && EMBEDDED_DATA !== null && ((EMBEDDED_DATA.ym_tracks && EMBEDDED_DATA.ym_tracks.length) || (EMBEDDED_DATA.raw_tracks && EMBEDDED_DATA.raw_tracks.length))) ? EMBEDDED_DATA : null;
+    if (!d) {
+      const eps = ['http://localhost:8000/api/latest-export', 'https://ym-to-soundcloud.onrender.com/api/latest-export'];
+      for (const ep of eps) {
+        try {
+          const res = await fetch(ep);
+          if (res.ok) { d = await res.json(); break; }
+        } catch (e) {}
+      }
+    }
+    if (!d) throw new Error('Данные треков не найдены. Сначала запустите перенос на сайте.');
+    const title = d.title || d.playlist_title || 'SoundCloud плейлист';
+    let tracksToAdd = (d && Array.isArray(d.ym_tracks)) ? d.ym_tracks.map(tr => ({ id: String(tr.id), albumId: String(tr.album_id || tr.albumId || '') })) : [];
+    const raw = (d && Array.isArray(d.raw_tracks)) ? d.raw_tracks : [];
+
+    if (!tracksToAdd.length && raw.length > 0) {
+      t.innerHTML = closeBtn + '<div style="color:#FFCC00;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Поиск треков в каталоге Яндекс Музыки...</div><div id="ym-p-txt" style="color:#EEE;font-size:12.5px;margin-bottom:10px;">Обработано 0 из ' + raw.length + '...</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:5px;overflow:hidden;width:100%;"><div id="ym-p-bar" style="background:#FFCC00;height:100%;width:0%;transition:width 0.15s;"></div></div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+      for (let i = 0; i < raw.length; i++) {
+        const tr = raw[i];
+        const q = (tr.artist + ' ' + tr.title).trim();
+        try {
+          const sRes = await fetch('/handlers/music-search.jsx?text=' + encodeURIComponent(q) + '&type=tracks&lang=ru');
+          if (sRes.ok) {
+            const sData = await sRes.json();
+            const items = (sData && sData.tracks && Array.isArray(sData.tracks.items)) ? sData.tracks.items : [];
+            if (items.length > 0) {
+              const best = items[0];
+              const alb = (best && Array.isArray(best.albums) && best.albums[0]) || {};
+              tracksToAdd.push({ id: String(best.id), albumId: String(alb.id || '') });
+            }
+          }
+        } catch (e) {}
+        const pTxt = document.getElementById('ym-p-txt');
+        const pBar = document.getElementById('ym-p-bar');
+        if (pTxt) pTxt.textContent = 'Обработано ' + (i + 1) + ' из ' + raw.length + ' (найдено ' + tracksToAdd.length + ')...';
+        if (pBar) pBar.style.width = Math.round(((i + 1) / raw.length) * 100) + '%';
+      }
+    }
+
+    if (!tracksToAdd.length) {
+      t.innerHTML = closeBtn + '<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Треки не найдены</div><div style="color:#888;font-size:12px;">Проверьте названия или исходный плейлист</div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+      setTimeout(dismiss, 5000);
+      return;
+    }
+
+    t.innerHTML = closeBtn + '<div style="color:#FFCC00;font-weight:700;font-size:14.5px;margin-bottom:6px;">⚡ Создание плейлиста в Яндекс Музыке...</div><div style="color:#AAA;font-size:12.5px;">Авторизация в профиле...</div>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+
+    let numericUid = null;
+    let userLogin = null;
+
+    try {
+      const avatarImgs = Array.from(document.querySelectorAll('img[src*="get-yapic"]'));
+      for (const img of avatarImgs) {
+        const src = img.src || img.getAttribute('src') || '';
+        const m = src.match(/get-yapic\/(\d{6,14})\//);
+        if (m && m[1]) { numericUid = m[1]; break; }
+      }
+    } catch (e) {}
+
+    const deepUid = (obj, d = 0) => {
+      if (!obj || d > 6 || typeof obj !== 'object') return null;
+      if (typeof obj.uid === 'number' && obj.uid > 100000) return String(obj.uid);
+      if (typeof obj.uid === 'string' && /^\d{6,14}$/.test(obj.uid)) return obj.uid;
+      if (typeof obj.passportUid === 'number' && obj.passportUid > 100000) return String(obj.passportUid);
+      if (typeof obj.passportUid === 'string' && /^\d{6,14}$/.test(obj.passportUid)) return obj.passportUid;
+      if (Array.isArray(obj)) {
+        for (const item of obj) {
+          if (item && typeof item === 'object' && typeof item.path === 'string' && item.path.endsWith('/uid') && item.value && /^\d{6,14}$/.test(String(item.value))) return String(item.value);
+          const f = deepUid(item, d + 1);
+          if (f) return f;
+        }
+      } else {
+        for (const k of ['account', 'user', 'owner', 'defaultUser', 'currentUser', 'profile', 'data', 'result', 'value', 'state']) {
+          if (obj[k]) { const f = deepUid(obj[k], d + 1); if (f) return f; }
+        }
+      }
+      return null;
+    };
+
+    if (!numericUid && window.__STATE_PATCHES__) numericUid = deepUid(window.__STATE_PATCHES__);
+    if (!numericUid && window.__NEXT_DATA__) numericUid = deepUid(window.__NEXT_DATA__);
+    if (!numericUid && window.Mu) numericUid = deepUid(window.Mu);
+    if (!numericUid && window.__INITIAL_STATE__) numericUid = deepUid(window.__INITIAL_STATE__);
+
+    try {
+      const scripts = Array.from(document.scripts).map(s => s.textContent || '').join('\n');
+      if (!numericUid) {
+        const m = scripts.match(/(?:uid|passportUid|userId|ownerId)[^:]{0,10}:\s*"?(\d{6,14})/i);
+        if (m && m[1]) numericUid = m[1];
+      }
+      if (!numericUid) {
+        const m = scripts.match(/\/uid[^,]{0,15},\s*"?value"?\s*:\s*(\d{6,14})/i);
+        if (m && m[1]) numericUid = m[1];
+      }
+      if (!numericUid) {
+        let p = 0;
+        while ((p = scripts.toLowerCase().indexOf('fl0ffi', p)) !== -1) {
+          const slice = scripts.substring(Math.max(0, p - 400), Math.min(scripts.length, p + 400));
+          const m = slice.match(/(?:uid|passportUid|userId|ownerId|id)[^:]{0,10}:\s*"?(\d{6,14})/i);
+          if (m && m[1]) { numericUid = m[1]; break; }
+          p += 6;
+        }
+      }
+      if (!numericUid) {
+        let p = 0;
+        while ((p = scripts.toLowerCase().indexOf('egor', p)) !== -1) {
+          const slice = scripts.substring(Math.max(0, p - 400), Math.min(scripts.length, p + 400));
+          const m = slice.match(/(?:uid|passportUid|userId|ownerId|id)[^:]{0,10}:\s*"?(\d{6,14})/i);
+          if (m && m[1]) { numericUid = m[1]; break; }
+          p += 4;
+        }
+      }
+      if (!userLogin) {
+        const mL = scripts.match(/"login"\s*:\s*"([a-zA-Z0-9_\-\.]+)"/);
+        if (mL && mL[1]) userLogin = mL[1];
+      }
+    } catch (e) {}
+
+    if (!userLogin) {
+      const m = document.cookie.match(/(?:^|;\s*)yandex_login=([^;]+)/);
+      if (m && m[1]) userLogin = decodeURIComponent(m[1]).replace(/^"|"$/g, '').trim();
+    }
+    if (!numericUid) {
+      const mC = document.cookie.match(/(?:uid\.|(?:^|[;#\s])(?:uid|passport_uid)=)(\d{6,14})/);
+      if (mC && mC[1]) numericUid = mC[1];
+    }
+
+    if (!numericUid) {
+      const probes = [
+        '/handlers/playlist.jsx?owner=' + encodeURIComponent(userLogin || 'fl0ffi') + '&kinds=3',
+        '/handlers/library.jsx?owner=' + encodeURIComponent(userLogin || 'fl0ffi'),
+        '/handlers/auth.jsx',
+        '/api/v2.1/handlers/account'
+      ];
+      for (const pu of probes) {
+        try {
+          const pr = await fetch(pu, { credentials: 'include', headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
+          const pt = await pr.text();
+          if (pt && !pt.trim().startsWith('<')) {
+            const m = pt.match(/(?:uid|passportUid|userId|ownerId)[^:]{0,10}:\s*"?(\d{6,14})/i);
+            if (m && m[1]) { numericUid = m[1]; break; }
+          }
+        } catch (e) {}
+      }
+    }
+
+    const candidateOwners = [];
+    if (numericUid) candidateOwners.push(numericUid);
+    if (userLogin && !candidateOwners.includes(userLogin)) candidateOwners.push(userLogin);
+    if (!candidateOwners.includes('fl0ffi')) candidateOwners.push('fl0ffi');
+
+    let cd = null;
+    let pk = null;
+    let rev = 0;
+    let activeOwner = null;
+    let lastErr = '';
+
+    for (const owner of candidateOwners) {
+      const attempts = [
+        { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+        { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', json: true },
+        { url: 'https://api.music.yandex.net/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+        { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+        { url: '/handlers/library.jsx?owner=' + encodeURIComponent(owner) + '&action=create-playlist', form: true },
+        { url: '/api/v2.1/handlers/library.jsx?owner=' + encodeURIComponent(owner) + '&action=create-playlist', form: true }
+      ];
+
+      for (const att of attempts) {
+        for (const vis of ['public', 'none', 'private']) {
+          try {
+            let res;
+            if (att.form) {
+              const params = new URLSearchParams();
+              params.append('title', title);
+              if (vis !== 'none') params.append('visibility', vis);
+              res = await fetch(att.url, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/x-www-form-urlencoded',
+                  'X-Requested-With': 'XMLHttpRequest',
+                  'Accept': 'application/json'
+                },
+                credentials: 'include',
+                body: params.toString()
+              });
+            } else {
+              res = await fetch(att.url, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'X-Requested-With': 'XMLHttpRequest',
+                  'Accept': 'application/json'
+                },
+                credentials: 'include',
+                body: JSON.stringify(vis !== 'none' ? { title: title, visibility: vis } : { title: title })
+              });
+            }
+
+            const text = await res.text();
+            if (!text || text.trim().startsWith('<')) continue;
+
+            let parsed = null;
+            try { parsed = JSON.parse(text); } catch (e) {}
+            if (parsed) {
+              const p = parsed.result || parsed.playlist || parsed.data || parsed;
+              const foundKind = p.kind || p.playlist_id || p.id || p.uuid || parsed.kind;
+              if (foundKind) {
+                cd = parsed;
+                pk = String(foundKind);
+                rev = p.revision !== undefined ? p.revision : (parsed.revision !== undefined ? parsed.revision : 0);
+                activeOwner = owner;
+                break;
+              }
+            }
+            lastErr = att.url + ' (' + res.status + '): ' + text.slice(0, 80);
+          } catch (err) {
+            lastErr = att.url + ' error: ' + err.message;
+          }
+        }
+        if (pk) break;
+      }
+      if (pk) break;
+    }
+
+    if (!pk) {
+      const cleanErr = String(lastErr).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      throw new Error('Сервер Яндекса не создал плейлист. ' + (cleanErr || 'Проверьте аккаунт'));
+    }
+
+    const chunkSize = 50;
+    const totalChunks = Math.max(1, Math.ceil(tracksToAdd.length / chunkSize));
+    for (let i = 0; i < tracksToAdd.length; i += chunkSize) {
+      const chunk = tracksToAdd.slice(i, i + chunkSize);
+      const chunkIdx = Math.floor(i / chunkSize) + 1;
+      t.innerHTML = closeBtn + '<div style="color:#FFCC00;font-weight:700;font-size:14.5px;margin-bottom:6px;">⚡ Добавление в Яндекс Музыку...</div><div style="color:#EEE;font-weight:600;font-size:13px;margin-bottom:10px;">Часть ' + chunkIdx + ' из ' + totalChunks + ' (' + chunk.length + ' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FFCC00;height:100%;width:' + Math.round((chunkIdx / totalChunks) * 100) + '%;transition:width 0.3s;"></div></div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+
+      const diffObj = { op: 'insert', at: i, tracks: chunk.map(tr => ({ id: String(tr.id), albumId: String(tr.albumId || '') })) };
+      const patchForm = new URLSearchParams();
+      patchForm.append('diff', JSON.stringify(diffObj));
+      patchForm.append('revision', String(rev));
+
+      const patchUrls = [
+        { url: '/users/' + encodeURIComponent(activeOwner) + '/playlists/' + encodeURIComponent(pk) + '/change-relative', form: true },
+        { url: '/users/' + encodeURIComponent(activeOwner) + '/playlists/' + encodeURIComponent(pk) + '/change-relative', json: true },
+        { url: 'https://api.music.yandex.net/users/' + encodeURIComponent(activeOwner) + '/playlists/' + encodeURIComponent(pk) + '/change-relative', form: true },
+        { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(activeOwner) + '/playlists/' + encodeURIComponent(pk) + '/change-relative', form: true },
+        { url: '/handlers/playlist-patch.jsx?owner=' + encodeURIComponent(activeOwner) + '&kinds=' + encodeURIComponent(pk), form: true }
+      ];
+
+      let patched = false;
+      for (const pu of patchUrls) {
+        try {
+          let patchRes;
+          if (pu.form) {
+            patchRes = await fetch(pu.url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+              },
+              credentials: 'include',
+              body: patchForm.toString()
+            });
+          } else {
+            patchRes = await fetch(pu.url, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Accept': 'application/json'
+              },
+              credentials: 'include',
+              body: JSON.stringify({ diff: diffObj, revision: rev })
+            });
+          }
+          const pText = await patchRes.text();
+          if (!pText || pText.trim().startsWith('<')) continue;
+          let pData = null;
+          try { pData = JSON.parse(pText); } catch (e) {}
+          if (pData) {
+            patched = true;
+            const pObj = pData.result || pData.playlist || pData.data || pData;
+            if (pObj && pObj.revision !== undefined) rev = pObj.revision;
+            else rev += 1;
+            break;
+          }
+        } catch (e) {}
+      }
+      if (!patched) rev += 1;
+      await new Promise(r => setTimeout(r, 120));
+    }
+
+    const playlistUrl = 'https://music.yandex.ru/users/' + encodeURIComponent(userLogin || activeOwner) + '/playlists/' + encodeURIComponent(pk);
+    t.innerHTML = closeBtn + '<div style="color:#34C759;font-weight:700;font-size:15.5px;margin-bottom:6px;">✓ Добавлено ' + tracksToAdd.length + ' треков в Яндекс Музыку!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист «' + title + '» готов в вашем профиле</div><a href="' + playlistUrl + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FFCC00,#FFAA00);color:#000;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,204,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+    setTimeout(dismiss, 12000);
+  } catch (e) {
+    t.innerHTML = closeBtn + '<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">' + (e.message || 'Ошибка') + '</div>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+    setTimeout(dismiss, 8000);
+  }
+}
+
+async function soundcloudRunner(EMBEDDED_DATA) {
+  if (!location.hostname.includes('soundcloud.com')) {
+    alert('Откройте вкладку soundcloud.com перед запуском!');
+    return;
+  }
+  let t = document.getElementById('ym-sc-toast');
+  if (t) t.remove();
+  t = document.createElement('div');
+  t.id = 'ym-sc-toast';
+  t.style.cssText = 'position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,22,0.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:20px 26px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:320px;max-width:440px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';
+  document.body.appendChild(t);
+  const closeBtn = '<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#999;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>';
+  const dismiss = () => {
+    t.style.opacity = '0';
+    t.style.transform = 'translateX(-50%) translateY(-12px)';
+    setTimeout(() => { if (t && t.parentNode) t.remove(); }, 300);
+  };
+  t.innerHTML = closeBtn + '<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FF5500;font-weight:700;font-size:14px;">⚡ YM ➔ SoundCloud</span></div><div style="color:#AAA;font-size:13px;">Подготовка треков...</div>';
+  document.getElementById('ym-sc-close').onclick = dismiss;
+
+  try {
+    let d = (typeof EMBEDDED_DATA === 'object' && EMBEDDED_DATA !== null && EMBEDDED_DATA.track_ids && Array.isArray(EMBEDDED_DATA.track_ids) && EMBEDDED_DATA.track_ids.length) ? EMBEDDED_DATA : null;
+    if (!d) {
+      const eps = ['http://localhost:8000/api/latest-export', 'https://ym-to-soundcloud.onrender.com/api/latest-export'];
+      for (const ep of eps) {
+        try {
+          const res = await fetch(ep);
+          if (res.ok) { d = await res.json(); break; }
+        } catch (e) {}
+      }
+    }
+    if (!d) throw new Error('Данные треков не найдены. Сначала запустите перенос на сайте.');
+    const ids = (d && Array.isArray(d.track_ids)) ? d.track_ids : [];
+    const title = d.title || d.playlist_title || 'Мне нравится (YM)';
+    if (!ids.length) {
+      t.innerHTML = closeBtn + '<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Нет треков для добавления</div><div style="color:#888;font-size:12px;">Сначала запустите подбор треков на сайте</div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+      setTimeout(dismiss, 5000);
+      return;
+    }
+
+    let tok = null;
+    const m = document.cookie.match(/oauth_token=([^;]+)/);
+    if (m) tok = decodeURIComponent(m[1]);
+    if (!tok) {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.toLowerCase().includes('token')) {
+          const v = localStorage.getItem(k);
+          if (v && v.length > 20) { tok = v; break; }
+        }
+      }
+    }
+    if (!tok) {
+      t.innerHTML = closeBtn + '<div style="color:#FF3B30;font-weight:600;margin-bottom:4px;">✕ Вы не вошли в SoundCloud</div><div style="color:#AAA;font-size:12px;">Войдите в аккаунт на этой вкладке</div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+      setTimeout(dismiss, 6000);
+      return;
+    }
+
+    let cid = 'cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';
+    const scs = Array.from(document.querySelectorAll('script[src*="sndcdn.com"]'));
+    for (const s of scs) {
+      const ma = s.src.match(/client_id=([a-zA-Z0-9]{32})/);
+      if (ma) { cid = ma[1]; break; }
+    }
+
+    const sz = 480;
+    const cks = [];
+    for (let i = 0; i < ids.length; i += sz) cks.push(ids.slice(i, i + sz));
+    const cre = [];
+    for (let i = 0; i < cks.length; i++) {
+      const pt = cks.length === 1 ? title : (title + ' (Часть ' + (i + 1) + ' из ' + cks.length + ')');
+      t.innerHTML = closeBtn + '<div style="color:#FF5500;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Добавление в SoundCloud...</div><div style="color:#FFF;font-weight:600;font-size:13px;margin-bottom:10px;">Часть ' + (i + 1) + ' из ' + cks.length + ' (' + cks[i].length + ' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FF5500;height:100%;width:' + Math.round(((i + 1) / cks.length) * 100) + '%;transition:width 0.3s;"></div></div>';
+      document.getElementById('ym-sc-close').onclick = dismiss;
+
+      const pr = await fetch('https://api-v2.soundcloud.com/playlists?client_id=' + cid, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'OAuth ' + tok.replace(/^OAuth /i, ''),
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ playlist: { title: pt, sharing: 'public', tracks: cks[i] } })
+      });
+      if (!pr.ok) throw new Error('HTTP ' + pr.status);
+      const pd = await pr.json();
+      cre.push(pd);
+    }
+
+    t.innerHTML = closeBtn + '<div style="color:#34C759;font-weight:700;font-size:15px;margin-bottom:6px;">✓ Добавлено ' + ids.length + ' треков в профиль!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист успешно создан в SoundCloud</div><a href="' + cre[0].permalink_url + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FF5500,#FF3300);color:#FFF;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,85,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+    setTimeout(dismiss, 10000);
+  } catch (e) {
+    t.innerHTML = closeBtn + '<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">' + e.message + '</div>';
+    document.getElementById('ym-sc-close').onclick = dismiss;
+    setTimeout(dismiss, 6000);
+  }
+}
+
 function initBookmarklet() {
   const btn = document.getElementById('autoBookmarkletBtn');
   if (!btn) return;
@@ -897,11 +1325,8 @@ function initBookmarklet() {
       ym_tracks: ymTracks,
       raw_tracks: rawTracks
     };
-    const payloadJson = JSON.stringify(payload);
-
-    code = `(async function(){if(!location.hostname.includes('yandex.')){alert('Откройте вкладку music.yandex.ru перед запуском!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,24,0.96);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:22px 28px;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,0.7),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:340px;max-width:480px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';document.body.appendChild(t);const closeBtn='<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#AAA;width:26px;height:26px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;transition:background 0.2s;">✕</button>';const dismiss=()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(-12px)';setTimeout(()=>{if(t&&t.parentNode)t.remove();},300);};t.innerHTML=closeBtn+'<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FFCC00;font-weight:700;font-size:14.5px;">⚡ SoundCloud ➔ Яндекс Музыка</span></div><div style="color:#AAA;font-size:13px;">Подготовка треков...</div>';document.getElementById('ym-sc-close').onclick=dismiss;try{const EMBEDDED_DATA=${payloadJson};let d=(typeof EMBEDDED_DATA==='object'&&EMBEDDED_DATA!==null&&((EMBEDDED_DATA.ym_tracks&&EMBEDDED_DATA.ym_tracks.length)||(EMBEDDED_DATA.raw_tracks&&EMBEDDED_DATA.raw_tracks.length)))?EMBEDDED_DATA:null;if(!d){const eps=['http://localhost:8000/api/latest-export','https://ym-to-soundcloud.onrender.com/api/latest-export'];for(const ep of eps){try{const res=await fetch(ep);if(res.ok){d=await res.json();break;}}catch(e){}}}if(!d)throw new Error('Данные треков не найдены. Сначала запустите перенос на сайте.');const title=d.title||d.playlist_title||'SoundCloud плейлист';let tracksToAdd=(d&&Array.isArray(d.ym_tracks))?d.ym_tracks.map(tr=>({id:String(tr.id),albumId:String(tr.album_id||tr.albumId||'')})) :[];const raw=(d&&Array.isArray(d.raw_tracks))?d.raw_tracks:[];if(!tracksToAdd.length&&raw.length>0){t.innerHTML=closeBtn+'<div style="color:#FFCC00;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Поиск треков в каталоге Яндекс Музыки...</div><div id="ym-p-txt" style="color:#EEE;font-size:12.5px;margin-bottom:10px;">Обработано 0 из '+raw.length+'...</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:5px;overflow:hidden;width:100%;"><div id="ym-p-bar" style="background:#FFCC00;height:100%;width:0%;transition:width 0.15s;"></div></div>';document.getElementById('ym-sc-close').onclick=dismiss;for(let i=0;i<raw.length;i++){const tr=raw[i];const q=(tr.artist+' '+tr.title).trim();try{const sRes=await fetch('/handlers/music-search.jsx?text='+encodeURIComponent(q)+'&type=tracks&lang=ru');if(sRes.ok){const sData=await sRes.json();const items=(sData&&sData.tracks&&Array.isArray(sData.tracks.items))?sData.tracks.items:[];if(items.length>0){const best=items[0];const alb=(best&&Array.isArray(best.albums)&&best.albums[0])||{};tracksToAdd.push({id:String(best.id),albumId:String(alb.id||'')});}}}catch(e){}const pTxt=document.getElementById('ym-p-txt');const pBar=document.getElementById('ym-p-bar');if(pTxt)pTxt.textContent='Обработано '+(i+1)+' из '+raw.length+' (найдено '+tracksToAdd.length+')...';if(pBar)pBar.style.width=Math.round(((i+1)/raw.length)*100)+'%';}}if(!tracksToAdd.length){t.innerHTML=closeBtn+'<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Треки не найдены</div><div style="color:#888;font-size:12px;">Проверьте названия или исходный плейлист</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,5000);return;}t.innerHTML=closeBtn+'<div style="color:#FFCC00;font-weight:700;font-size:14.5px;margin-bottom:6px;">⚡ Создание плейлиста в Яндекс Музыке...</div><div style="color:#AAA;font-size:12.5px;">Авторизация в профиле...</div>';document.getElementById('ym-sc-close').onclick=dismiss;let numericUid=null;let userLogin=null;try{const avatarImgs=Array.from(document.querySelectorAll('img[src*="get-yapic"]'));for(const img of avatarImgs){const src=img.src||img.getAttribute('src')||'';const m=src.match(/get-yapic\/(\d{6,14})\//);if(m&&m[1]){numericUid=m[1];break;}}}catch(e){}const deepUid=(obj,d=0)=>{if(!obj||d>6||typeof obj!=='object')return null;if(typeof obj.uid==='number'&&obj.uid>100000)return String(obj.uid);if(typeof obj.uid==='string'&&/^\d{6,14}$/.test(obj.uid))return obj.uid;if(typeof obj.passportUid==='number'&&obj.passportUid>100000)return String(obj.passportUid);if(typeof obj.passportUid==='string'&&/^\d{6,14}$/.test(obj.passportUid))return obj.passportUid;if(Array.isArray(obj)){for(const item of obj){if(item&&typeof item==='object'&&typeof item.path==='string'&&item.path.endsWith('/uid')&&item.value&&/^\d{6,14}$/.test(String(item.value)))return String(item.value);const f=deepUid(item,d+1);if(f)return f;}}else{for(const k of ['account','user','owner','defaultUser','currentUser','profile','data','result','value','state']){if(obj[k]){const f=deepUid(obj[k],d+1);if(f)return f;}}}return null;};if(!numericUid&&window.__STATE_PATCHES__)numericUid=deepUid(window.__STATE_PATCHES__);if(!numericUid&&window.__NEXT_DATA__)numericUid=deepUid(window.__NEXT_DATA__);if(!numericUid&&window.Mu)numericUid=deepUid(window.Mu);if(!numericUid&&window.__INITIAL_STATE__)numericUid=deepUid(window.__INITIAL_STATE__);try{const scripts=Array.from(document.scripts).map(s=>s.textContent||'').join('\n');if(!numericUid){const m=scripts.match(/(?:uid|passportUid|userId|ownerId)[^:]{0,10}:\s*"?(\d{6,14})/i);if(m&&m[1])numericUid=m[1];}if(!numericUid){const m=scripts.match(/\/uid[^,]{0,15},\s*"?value"?\s*:\s*(\d{6,14})/i);if(m&&m[1])numericUid=m[1];}if(!numericUid){let p=0;while((p=scripts.toLowerCase().indexOf('fl0ffi',p))!==-1){const slice=scripts.substring(Math.max(0,p-400),Math.min(scripts.length,p+400));const m=slice.match(/(?:uid|passportUid|userId|ownerId|id)[^:]{0,10}:\s*"?(\d{6,14})/i);if(m&&m[1]){numericUid=m[1];break;}p+=6;}}if(!numericUid){let p=0;while((p=scripts.toLowerCase().indexOf('egor',p))!==-1){const slice=scripts.substring(Math.max(0,p-400),Math.min(scripts.length,p+400));const m=slice.match(/(?:uid|passportUid|userId|ownerId|id)[^:]{0,10}:\s*"?(\d{6,14})/i);if(m&&m[1]){numericUid=m[1];break;}p+=4;}}if(!userLogin){const mL=scripts.match(/"login"\s*:\s*"([a-zA-Z0-9_\-\.]+)"/);if(mL&&mL[1])userLogin=mL[1];}}catch(e){}if(!userLogin){const m=document.cookie.match(/(?:^|;\s*)yandex_login=([^;]+)/);if(m&&m[1])userLogin=decodeURIComponent(m[1]).replace(/^"|"$/g,'').trim();}if(!numericUid){const mC=document.cookie.match(/(?:uid\.|(?:^|[;#\s])(?:uid|passport_uid)=)(\d{6,14})/);if(mC&&mC[1])numericUid=mC[1];}if(!numericUid){const probes=['/handlers/playlist.jsx?owner='+encodeURIComponent(userLogin||'fl0ffi')+'&kinds=3','/handlers/library.jsx?owner='+encodeURIComponent(userLogin||'fl0ffi'),'/handlers/auth.jsx','/api/v2.1/handlers/account'];for(const pu of probes){try{const pr=await fetch(pu,{credentials:'include',headers:{'Accept':'application/json','X-Requested-With':'XMLHttpRequest'}});const pt=await pr.text();if(pt&&!pt.trim().startsWith('<')){const m=pt.match(/(?:uid|passportUid|userId|ownerId)[^:]{0,10}:\s*"?(\d{6,14})/i);if(m&&m[1]){numericUid=m[1];break;}}}catch(e){}}}const candidateOwners=[];if(numericUid)candidateOwners.push(numericUid);if(userLogin&&!candidateOwners.includes(userLogin))candidateOwners.push(userLogin);if(!candidateOwners.includes('fl0ffi'))candidateOwners.push('fl0ffi');let cd=null;let pk=null;let rev=0;let activeOwner=null;let lastErr='';for(const owner of candidateOwners){const attempts=[{url:'/users/'+encodeURIComponent(owner)+'/playlists/create',form:true},{url:'/users/'+encodeURIComponent(owner)+'/playlists/create',json:true},{url:'https://api.music.yandex.net/users/'+encodeURIComponent(owner)+'/playlists/create',form:true},{url:'https://api.music.yandex.ru/users/'+encodeURIComponent(owner)+'/playlists/create',form:true},{url:'/handlers/library.jsx?owner='+encodeURIComponent(owner)+'&action=create-playlist',form:true},{url:'/api/v2.1/handlers/library.jsx?owner='+encodeURIComponent(owner)+'&action=create-playlist',form:true}];for(const att of attempts){for(const vis of ['public','none','private']){try{let res;if(att.form){const params=new URLSearchParams();params.append('title',title);if(vis!=='none')params.append('visibility',vis);res=await fetch(att.url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest','Accept':'application/json'},credentials:'include',body:params.toString()});}else{res=await fetch(att.url,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest','Accept':'application/json'},credentials:'include',body:JSON.stringify(vis!=='none'?{title:title,visibility:vis}:{title:title})});}const text=await res.text();if(!text||text.trim().startsWith('<'))continue;let parsed=null;try{parsed=JSON.parse(text);}catch(e){}if(parsed){const p=parsed.result||parsed.playlist||parsed.data||parsed;const foundKind=p.kind||p.playlist_id||p.id||p.uuid||parsed.kind;if(foundKind){cd=parsed;pk=String(foundKind);rev=p.revision!==undefined?p.revision:(parsed.revision!==undefined?parsed.revision:0);activeOwner=owner;break;}}lastErr=att.url+' ('+res.status+'): '+text.slice(0,80);}catch(err){lastErr=att.url+' error: '+err.message;}}if(pk)break;}if(pk)break;}if(!pk){const cleanErr=String(lastErr).replace(/</g,'&lt;').replace(/>/g,'&gt;');throw new Error('Сервер Яндекса не создал плейлист. '+(cleanErr||'Проверьте аккаунт'));}const chunkSize=50;const totalChunks=Math.max(1,Math.ceil(tracksToAdd.length/chunkSize));for(let i=0;i<tracksToAdd.length;i+=chunkSize){const chunk=tracksToAdd.slice(i,i+chunkSize);const chunkIdx=Math.floor(i/chunkSize)+1;t.innerHTML=closeBtn+'<div style="color:#FFCC00;font-weight:700;font-size:14.5px;margin-bottom:6px;">⚡ Добавление в Яндекс Музыку...</div><div style="color:#EEE;font-weight:600;font-size:13px;margin-bottom:10px;">Часть '+chunkIdx+' из '+totalChunks+' ('+chunk.length+' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FFCC00;height:100%;width:'+Math.round((chunkIdx/totalChunks)*100)+'%;transition:width 0.3s;"></div></div>';document.getElementById('ym-sc-close').onclick=dismiss;const diffObj={op:'insert',at:i,tracks:chunk.map(tr=>({id:String(tr.id),albumId:String(tr.albumId||'')}))};const patchForm=new URLSearchParams();patchForm.append('diff',JSON.stringify(diffObj));patchForm.append('revision',String(rev));const patchUrls=[{url:'/users/'+encodeURIComponent(activeOwner)+'/playlists/'+encodeURIComponent(pk)+'/change-relative',form:true},{url:'/users/'+encodeURIComponent(activeOwner)+'/playlists/'+encodeURIComponent(pk)+'/change-relative',json:true},{url:'https://api.music.yandex.net/users/'+encodeURIComponent(activeOwner)+'/playlists/'+encodeURIComponent(pk)+'/change-relative',form:true},{url:'https://api.music.yandex.ru/users/'+encodeURIComponent(activeOwner)+'/playlists/'+encodeURIComponent(pk)+'/change-relative',form:true},{url:'/handlers/playlist-patch.jsx?owner='+encodeURIComponent(activeOwner)+'&kinds='+encodeURIComponent(pk),form:true}];let patched=false;for(const pu of patchUrls){try{let patchRes;if(pu.form){patchRes=await fetch(pu.url,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest','Accept':'application/json'},credentials:'include',body:patchForm.toString()});}else{patchRes=await fetch(pu.url,{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'XMLHttpRequest','Accept':'application/json'},credentials:'include',body:JSON.stringify({diff:diffObj,revision:rev})});}const pText=await patchRes.text();if(!pText||pText.trim().startsWith('<'))continue;let pData=null;try{pData=JSON.parse(pText);}catch(e){}if(pData){patched=true;const pObj=pData.result||pData.playlist||pData.data||pData;if(pObj&&pObj.revision!==undefined)rev=pObj.revision;else rev+=1;break;}}catch(e){}}if(!patched)rev+=1;await new Promise(r=>setTimeout(r,120));}const playlistUrl='https://music.yandex.ru/users/'+encodeURIComponent(userLogin||activeOwner)+'/playlists/'+encodeURIComponent(pk);t.innerHTML=closeBtn+'<div style="color:#34C759;font-weight:700;font-size:15.5px;margin-bottom:6px;">✓ Добавлено '+tracksToAdd.length+' треков в Яндекс Музыку!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист «'+title+'» готов в вашем профиле</div><a href="'+playlistUrl+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FFCC00,#FFAA00);color:#000;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,204,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,12000);}catch(e){t.innerHTML=closeBtn+'<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">'+(e.message||'Ошибка')+'</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,8000);}})();`;
+    code = '(' + yandexMusicRunner.toString() + ')(' + JSON.stringify(payload) + ');';
   } else {
-    // SoundCloud Bookmarklet
     const scTrackIds = allTracks
       .map(t => (t.selected_match && t.selected_match.id) ? t.selected_match.id : null)
       .filter(Boolean);
@@ -915,13 +1340,41 @@ function initBookmarklet() {
       title: state.playlistTitle || "Мне нравится (YM)",
       track_ids: scTrackIds
     };
-    const payloadJson = JSON.stringify(payload);
-
-    code = `(async function(){if(!location.hostname.includes('soundcloud.com')){alert('Откройте вкладку soundcloud.com перед запуском!');return;}let t=document.getElementById('ym-sc-toast');if(t)t.remove();t=document.createElement('div');t.id='ym-sc-toast';t.style.cssText='position:fixed;top:24px;left:50%;transform:translateX(-50%) translateY(0);z-index:99999999;background:rgba(18,18,22,0.94);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);color:#F2F2F2;padding:20px 26px;border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,0.6),0 0 0 1px rgba(255,255,255,0.08);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13.5px;text-align:center;min-width:320px;max-width:440px;transition:all 0.3s cubic-bezier(0.16,1,0.3,1);box-sizing:border-box;';document.body.appendChild(t);const closeBtn='<button type="button" id="ym-sc-close" style="position:absolute;top:10px;right:12px;background:rgba(255,255,255,0.08);border:none;color:#999;width:24px;height:24px;border-radius:50%;cursor:pointer;font-size:13px;line-height:1;display:flex;align-items:center;justify-content:center;">✕</button>';const dismiss=()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(-12px)';setTimeout(()=>{if(t&&t.parentNode)t.remove();},300);};t.innerHTML=closeBtn+'<div style="display:flex;align-items:center;justify-content:center;gap:8px;margin-bottom:8px;"><span style="color:#FF5500;font-weight:700;font-size:14px;">⚡ YM ➔ SoundCloud</span></div><div style="color:#AAA;font-size:13px;">Подготовка треков...</div>';document.getElementById('ym-sc-close').onclick=dismiss;try{const EMBEDDED_DATA=${payloadJson};let d=(typeof EMBEDDED_DATA==='object'&&EMBEDDED_DATA!==null&&EMBEDDED_DATA.track_ids&&Array.isArray(EMBEDDED_DATA.track_ids)&&EMBEDDED_DATA.track_ids.length)?EMBEDDED_DATA:null;if(!d){const eps=['https://ym-to-soundcloud.onrender.com/api/latest-export'];for(const ep of eps){try{const res=await fetch(ep);if(res.ok){d=await res.json();break;}}catch(e){}}}if(!d)throw new Error('Данные треков не найдены. Сначала запустите перенос на сайте.');const ids=(d&&Array.isArray(d.track_ids))?d.track_ids:[];const title=d.title||d.playlist_title||'Мне нравится (YM)';if(!ids.length){t.innerHTML=closeBtn+'<div style="color:#FF9500;font-weight:600;margin-bottom:4px;">✕ Нет треков для добавления</div><div style="color:#888;font-size:12px;">Сначала запустите подбор треков на сайте</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,5000);return;}let tok=null;const m=document.cookie.match(/oauth_token=([^;]+)/);if(m)tok=decodeURIComponent(m[1]);if(!tok){for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.toLowerCase().includes('token')){const v=localStorage.getItem(k);if(v&&v.length>20){tok=v;break;}}}}if(!tok){t.innerHTML=closeBtn+'<div style="color:#FF3B30;font-weight:600;margin-bottom:4px;">✕ Вы не вошли в SoundCloud</div><div style="color:#AAA;font-size:12px;">Войдите в аккаунт на этой вкладке</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,6000);return;}let cid='cUfk83W6dFJv2UFUorAW0CTHgyptuEmP';const scs=Array.from(document.querySelectorAll('script[src*="sndcdn.com"]'));for(const s of scs){const ma=s.src.match(/client_id=([a-zA-Z0-9]{32})/);if(ma){cid=ma[1];break;}}const sz=480;const cks=[];for(let i=0;i<ids.length;i+=sz)cks.push(ids.slice(i,i+sz));const cre=[];for(let i=0;i<cks.length;i++){const pt=cks.length===1?title:(title+' (Часть '+(i+1)+' из '+cks.length+')');t.innerHTML=closeBtn+'<div style="color:#FF5500;font-weight:700;font-size:14px;margin-bottom:6px;">⚡ Добавление в SoundCloud...</div><div style="color:#FFF;font-weight:600;font-size:13px;margin-bottom:10px;">Часть '+(i+1)+' из '+cks.length+' ('+cks[i].length+' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FF5500;height:100%;width:'+Math.round(((i+1)/cks.length)*100)+'%;transition:width 0.3s;"></div></div>';document.getElementById('ym-sc-close').onclick=dismiss;const pr=await fetch('https://api-v2.soundcloud.com/playlists?client_id='+cid,{method:'POST',headers:{'Authorization':'OAuth '+tok.replace(/^OAuth /i,''),'Content-Type':'application/json'},body:JSON.stringify({playlist:{title:pt,sharing:'public',tracks:cks[i]}})});if(!pr.ok)throw new Error('HTTP '+pr.status);const pd=await pr.json();cre.push(pd);}t.innerHTML=closeBtn+'<div style="color:#34C759;font-weight:700;font-size:15px;margin-bottom:6px;">✓ Добавлено '+ids.length+' треков в профиль!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист успешно создан в SoundCloud</div><a href="'+cre[0].permalink_url+'" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FF5500,#FF3300);color:#FFF;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,85,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,10000);}catch(e){t.innerHTML=closeBtn+'<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">'+e.message+'</div>';document.getElementById('ym-sc-close').onclick=dismiss;setTimeout(dismiss,6000);}})();`;
+    code = '(' + soundcloudRunner.toString() + ')(' + JSON.stringify(payload) + ');';
   }
 
   btn.dataset.code = code;
   btn.href = 'javascript:' + encodeURIComponent(code);
+
+  if (!btn.dataset.clickAttached) {
+    btn.dataset.clickAttached = 'true';
+    btn.addEventListener('click', async (e) => {
+      e.preventDefault();
+      const codeToRun = btn.dataset.code;
+      if (!codeToRun) {
+        alert('Нет подготовленных треков. Сначала запустите подбор треков.');
+        return;
+      }
+
+      try {
+        await navigator.clipboard.writeText(codeToRun);
+      } catch (err) {}
+
+      const isSc = state.direction === 'sc_to_ym';
+      const targetUrl = isSc ? 'https://music.yandex.ru' : 'https://soundcloud.com';
+      const targetName = isSc ? 'Яндекс Музыку' : 'SoundCloud';
+
+      window.open(targetUrl, '_blank');
+
+      const copyAlert = document.getElementById('copyRunnerSuccessAlert');
+      const txt = document.getElementById('copyRunnerSuccessText');
+      if (copyAlert && txt) {
+        copyAlert.classList.remove('hidden');
+        txt.innerHTML = `✓ <strong>Команда скопирована в буфер обмена!</strong><br>В открывшейся вкладке <strong>${targetName}</strong> нажмите <kbd>Cmd + Option + J</kbd> (в браузере Chrome) ➔ вставьте (<kbd>Cmd + V</kbd>) ➔ нажмите <kbd>Enter</kbd>.<br>Плейлист сразу же начнет создаваться!`;
+        setTimeout(() => { copyAlert.classList.add('hidden'); }, 15000);
+      }
+    });
+  }
 }
 
 initBookmarklet();
