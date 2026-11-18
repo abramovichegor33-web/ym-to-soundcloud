@@ -39,6 +39,7 @@ const tokenVerifyStatus = document.getElementById('tokenVerifyStatus');
 
 function setDirection(dir) {
   state.direction = dir;
+  document.body.dataset.direction = dir;
   if (dir === 'sc_to_ym') {
     if (dirYmToScBtn) dirYmToScBtn.classList.remove('active');
     if (dirScToYmBtn) dirScToYmBtn.classList.add('active');
