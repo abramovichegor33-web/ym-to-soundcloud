@@ -1041,71 +1041,104 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
     let activeOwner = null;
     let lastErr = '';
 
-    for (const owner of candidateOwners) {
-      const attempts = [
-        { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
-        { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', json: true },
-        { url: 'https://api.music.yandex.net/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
-        { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
-        { url: '/handlers/library.jsx?owner=' + encodeURIComponent(owner) + '&action=create-playlist', form: true },
-        { url: '/api/v2.1/handlers/library.jsx?owner=' + encodeURIComponent(owner) + '&action=create-playlist', form: true }
-      ];
+    // Check if user is currently looking at a playlist page
+    let currentUrlPk = null;
+    try {
+      const urlMatch = location.pathname.match(/\/(?:playlists|users\/[^/]+\/playlists)\/([a-zA-Z0-9_\-]+)/);
+      if (urlMatch && urlMatch[1]) {
+        currentUrlPk = urlMatch[1];
+      }
+    } catch (e) {}
 
-      for (const att of attempts) {
-        for (const vis of ['public', 'none', 'private']) {
-          try {
-            let res;
-            if (att.form) {
-              const params = new URLSearchParams();
-              params.append('title', title);
-              if (vis !== 'none') params.append('visibility', vis);
-              res = await fetch(att.url, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/x-www-form-urlencoded',
-                  'X-Requested-With': 'XMLHttpRequest',
-                  'Accept': 'application/json'
-                },
-                credentials: 'include',
-                body: params.toString()
-              });
-            } else {
-              res = await fetch(att.url, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'X-Requested-With': 'XMLHttpRequest',
-                  'Accept': 'application/json'
-                },
-                credentials: 'include',
-                body: JSON.stringify(vis !== 'none' ? { title: title, visibility: vis } : { title: title })
-              });
+    if (currentUrlPk) {
+      for (const owner of candidateOwners) {
+        try {
+          const res = await fetch('/handlers/playlist.jsx?owner=' + encodeURIComponent(owner) + '&kinds=' + encodeURIComponent(currentUrlPk), {
+            credentials: 'include',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+          });
+          if (res.ok) {
+            const data = await res.json();
+            const pl = data.playlist || data.result || data;
+            if (pl && (pl.trackCount === 0 || (Array.isArray(pl.tracks) && pl.tracks.length === 0) || (pl.title && pl.title.toLowerCase().trim() === title.toLowerCase().trim()))) {
+              cd = data;
+              pk = String(pl.kind || currentUrlPk);
+              rev = pl.revision !== undefined ? pl.revision : 0;
+              activeOwner = (pl.owner && (pl.owner.uid || pl.owner.login)) || pl.uid || owner;
+              break;
             }
-
-            const text = await res.text();
-            if (!text || text.trim().startsWith('<')) continue;
-
-            let parsed = null;
-            try { parsed = JSON.parse(text); } catch (e) {}
-            if (parsed) {
-              const p = parsed.result || parsed.playlist || parsed.data || parsed;
-              const foundKind = p.kind || p.playlist_id || p.id || p.uuid || parsed.kind;
-              if (foundKind) {
-                cd = parsed;
-                pk = String(foundKind);
-                rev = p.revision !== undefined ? p.revision : (parsed.revision !== undefined ? parsed.revision : 0);
-                activeOwner = owner;
-                break;
-              }
-            }
-            lastErr = att.url + ' (' + res.status + '): ' + text.slice(0, 80);
-          } catch (err) {
-            lastErr = att.url + ' error: ' + err.message;
           }
+        } catch (e) {}
+      }
+    }
+
+    if (!pk) {
+      for (const owner of candidateOwners) {
+        const attempts = [
+          { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+          { url: '/users/' + encodeURIComponent(owner) + '/playlists/create', json: true },
+          { url: 'https://api.music.yandex.net/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+          { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(owner) + '/playlists/create', form: true },
+          { url: '/handlers/library.jsx?owner=' + encodeURIComponent(owner) + '&action=create-playlist', form: true },
+          { url: '/api/v2.1/handlers/library.jsx?owner=' + encodeURIComponent(owner) + '&action=create-playlist', form: true }
+        ];
+
+        for (const att of attempts) {
+          for (const vis of ['public', 'none', 'private']) {
+            try {
+              let res;
+              if (att.form) {
+                const params = new URLSearchParams();
+                params.append('title', title);
+                if (vis !== 'none') params.append('visibility', vis);
+                res = await fetch(att.url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                  },
+                  credentials: 'include',
+                  body: params.toString()
+                });
+              } else {
+                res = await fetch(att.url, {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                    'Accept': 'application/json'
+                  },
+                  credentials: 'include',
+                  body: JSON.stringify(vis !== 'none' ? { title: title, visibility: vis } : { title: title })
+                });
+              }
+
+              const text = await res.text();
+              if (!text || text.trim().startsWith('<')) continue;
+
+              let parsed = null;
+              try { parsed = JSON.parse(text); } catch (e) {}
+              if (parsed) {
+                const p = parsed.result || parsed.playlist || parsed.data || parsed;
+                const foundKind = p.kind || p.playlist_id || p.id || p.uuid || parsed.kind;
+                if (foundKind) {
+                  cd = parsed;
+                  pk = String(foundKind);
+                  rev = p.revision !== undefined ? p.revision : (parsed.revision !== undefined ? parsed.revision : 0);
+                  activeOwner = (p.owner && (p.owner.uid || p.owner.login)) || p.uid || owner;
+                  break;
+                }
+              }
+              lastErr = att.url + ' (' + res.status + '): ' + text.slice(0, 80);
+            } catch (err) {
+              lastErr = att.url + ' error: ' + err.message;
+            }
+          }
+          if (pk) break;
         }
         if (pk) break;
       }
-      if (pk) break;
     }
 
     if (!pk) {
@@ -1113,75 +1146,187 @@ async function yandexMusicRunner(EMBEDDED_DATA) {
       throw new Error('Сервер Яндекса не создал плейлист. ' + (cleanErr || 'Проверьте аккаунт'));
     }
 
-    const chunkSize = 50;
+    const candidateKinds = [pk];
+    if (cd) {
+      const p = cd.result || cd.playlist || cd.data || cd;
+      if (p.kind && !candidateKinds.includes(String(p.kind))) candidateKinds.unshift(String(p.kind));
+      if (p.uuid && !candidateKinds.includes(String(p.uuid))) candidateKinds.push(String(p.uuid));
+    }
+    if (currentUrlPk && !candidateKinds.includes(currentUrlPk)) candidateKinds.push(currentUrlPk);
+
+    const patchOwners = [];
+    if (cd) {
+      const p = cd.result || cd.playlist || cd.data || cd;
+      if (p.owner && p.owner.uid) patchOwners.push(String(p.owner.uid));
+      if (p.owner && p.owner.login) patchOwners.push(String(p.owner.login));
+      if (p.uid) patchOwners.push(String(p.uid));
+    }
+    if (activeOwner && !patchOwners.includes(activeOwner)) patchOwners.push(activeOwner);
+    if (numericUid && !patchOwners.includes(numericUid)) patchOwners.push(numericUid);
+    if (userLogin && !patchOwners.includes(userLogin)) patchOwners.push(userLogin);
+    if (!patchOwners.includes('fl0ffi')) patchOwners.push('fl0ffi');
+
+    for (const pOwner of patchOwners) {
+      for (const pKind of candidateKinds) {
+        try {
+          const pCheck = await fetch('/handlers/playlist.jsx?owner=' + encodeURIComponent(pOwner) + '&kinds=' + encodeURIComponent(pKind), {
+            credentials: 'include',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' }
+          });
+          if (pCheck.ok) {
+            const pcText = await pCheck.text();
+            if (pcText && !pcText.trim().startsWith('<')) {
+              const pcData = JSON.parse(pcText);
+              const pObj = pcData.playlist || pcData.result || pcData;
+              if (pObj) {
+                if (pObj.revision !== undefined) rev = pObj.revision;
+                if (pObj.kind && !candidateKinds.includes(String(pObj.kind))) candidateKinds.unshift(String(pObj.kind));
+                activeOwner = pOwner;
+                pk = String(pObj.kind || pKind);
+                break;
+              }
+            }
+          }
+        } catch (e) {}
+      }
+      if (rev > 0) break;
+    }
+
+    const chunkSize = 40;
     const totalChunks = Math.max(1, Math.ceil(tracksToAdd.length / chunkSize));
+    let successCount = 0;
+    let currentAt = 0;
+    let lastPatchErr = '';
+
     for (let i = 0; i < tracksToAdd.length; i += chunkSize) {
       const chunk = tracksToAdd.slice(i, i + chunkSize);
       const chunkIdx = Math.floor(i / chunkSize) + 1;
       t.innerHTML = closeBtn + '<div style="color:#FFCC00;font-weight:700;font-size:14.5px;margin-bottom:6px;">⚡ Добавление в Яндекс Музыку...</div><div style="color:#EEE;font-weight:600;font-size:13px;margin-bottom:10px;">Часть ' + chunkIdx + ' из ' + totalChunks + ' (' + chunk.length + ' треков)</div><div style="background:rgba(255,255,255,0.1);border-radius:6px;height:4px;overflow:hidden;width:100%;"><div style="background:#FFCC00;height:100%;width:' + Math.round((chunkIdx / totalChunks) * 100) + '%;transition:width 0.3s;"></div></div>';
       document.getElementById('ym-sc-close').onclick = dismiss;
 
-      const diffObj = { op: 'insert', at: i, tracks: chunk.map(tr => ({ id: String(tr.id), albumId: String(tr.albumId || '') })) };
-      const patchForm = new URLSearchParams();
-      patchForm.append('diff', JSON.stringify(diffObj));
-      patchForm.append('revision', String(rev));
-
-      const patchUrls = [
-        { url: '/users/' + encodeURIComponent(activeOwner) + '/playlists/' + encodeURIComponent(pk) + '/change-relative', form: true },
-        { url: '/users/' + encodeURIComponent(activeOwner) + '/playlists/' + encodeURIComponent(pk) + '/change-relative', json: true },
-        { url: 'https://api.music.yandex.net/users/' + encodeURIComponent(activeOwner) + '/playlists/' + encodeURIComponent(pk) + '/change-relative', form: true },
-        { url: 'https://api.music.yandex.ru/users/' + encodeURIComponent(activeOwner) + '/playlists/' + encodeURIComponent(pk) + '/change-relative', form: true },
-        { url: '/handlers/playlist-patch.jsx?owner=' + encodeURIComponent(activeOwner) + '&kinds=' + encodeURIComponent(pk), form: true }
-      ];
+      const diffObj = {
+        op: 'insert',
+        at: currentAt,
+        tracks: chunk.map(tr => ({
+          id: String(tr.id),
+          albumId: String(tr.albumId || tr.album_id || '')
+        }))
+      };
+      const diffArrayStr = JSON.stringify([diffObj]);
 
       let patched = false;
-      for (const pu of patchUrls) {
-        try {
-          let patchRes;
-          if (pu.form) {
-            patchRes = await fetch(pu.url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
-              },
-              credentials: 'include',
-              body: patchForm.toString()
-            });
-          } else {
-            patchRes = await fetch(pu.url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest',
-                'Accept': 'application/json'
-              },
-              credentials: 'include',
-              body: JSON.stringify({ diff: diffObj, revision: rev })
-            });
+      for (const pOwner of patchOwners) {
+        for (const pKind of candidateKinds) {
+          const patchEndpoints = [
+            {
+              url: '/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change',
+              type: 'form',
+              body: () => {
+                const params = new URLSearchParams();
+                params.append('kind', pKind);
+                params.append('revision', String(rev));
+                params.append('diff', diffArrayStr);
+                return params.toString();
+              }
+            },
+            {
+              url: '/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change',
+              type: 'json',
+              body: () => JSON.stringify({ kind: pKind, revision: rev, diff: [diffObj] })
+            },
+            {
+              url: '/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
+              type: 'form',
+              body: () => {
+                const params = new URLSearchParams();
+                params.append('kind', pKind);
+                params.append('revision', String(rev));
+                params.append('diff', diffArrayStr);
+                return params.toString();
+              }
+            },
+            {
+              url: 'https://api.music.yandex.net/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change',
+              type: 'form',
+              body: () => {
+                const params = new URLSearchParams();
+                params.append('kind', pKind);
+                params.append('revision', String(rev));
+                params.append('diff', diffArrayStr);
+                return params.toString();
+              }
+            },
+            {
+              url: '/users/' + encodeURIComponent(pOwner) + '/playlists/' + encodeURIComponent(pKind) + '/change-relative',
+              type: 'json',
+              body: () => JSON.stringify({ kind: pKind, revision: rev, diff: [diffObj] })
+            }
+          ];
+
+          for (const ep of patchEndpoints) {
+            try {
+              const headers = { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'application/json' };
+              if (ep.type === 'form') {
+                headers['Content-Type'] = 'application/x-www-form-urlencoded';
+              } else {
+                headers['Content-Type'] = 'application/json';
+              }
+
+              const patchRes = await fetch(ep.url, {
+                method: 'POST',
+                headers: headers,
+                credentials: 'include',
+                body: ep.body()
+              });
+
+              const pText = await patchRes.text();
+              if (!pText || pText.trim().startsWith('<')) continue;
+              let pData = null;
+              try { pData = JSON.parse(pText); } catch (e) {}
+              if (pData) {
+                const pObj = pData.result || pData.playlist || pData.data || pData;
+                if (pObj && (pObj.revision !== undefined || pObj.trackCount !== undefined || pData.success || pData.invocationInfo)) {
+                  patched = true;
+                  if (pObj && pObj.revision !== undefined) rev = pObj.revision;
+                  else rev += 1;
+                  successCount += chunk.length;
+                  currentAt += chunk.length;
+                  activeOwner = pOwner;
+                  pk = pKind;
+                  break;
+                }
+              }
+              lastPatchErr = ep.url + ' (' + patchRes.status + '): ' + pText.slice(0, 80);
+            } catch (e) {
+              lastPatchErr = ep.url + ' error: ' + e.message;
+            }
           }
-          const pText = await patchRes.text();
-          if (!pText || pText.trim().startsWith('<')) continue;
-          let pData = null;
-          try { pData = JSON.parse(pText); } catch (e) {}
-          if (pData) {
-            patched = true;
-            const pObj = pData.result || pData.playlist || pData.data || pData;
-            if (pObj && pObj.revision !== undefined) rev = pObj.revision;
-            else rev += 1;
-            break;
-          }
-        } catch (e) {}
+          if (patched) break;
+        }
+        if (patched) break;
       }
-      if (!patched) rev += 1;
+
+      if (!patched) {
+        rev += 1;
+        currentAt += chunk.length;
+      }
       await new Promise(r => setTimeout(r, 120));
     }
 
+    if (successCount === 0) {
+      const cleanPatchErr = String(lastPatchErr).replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      throw new Error('Плейлист создан, но треки не добавились. ' + (cleanPatchErr || 'Ошибка сохранения'));
+    }
+
     const playlistUrl = 'https://music.yandex.ru/users/' + encodeURIComponent(userLogin || activeOwner) + '/playlists/' + encodeURIComponent(pk);
-    t.innerHTML = closeBtn + '<div style="color:#34C759;font-weight:700;font-size:15.5px;margin-bottom:6px;">✓ Добавлено ' + tracksToAdd.length + ' треков в Яндекс Музыку!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист «' + title + '» готов в вашем профиле</div><a href="' + playlistUrl + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FFCC00,#FFAA00);color:#000;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,204,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';
+    t.innerHTML = closeBtn + '<div style="color:#34C759;font-weight:700;font-size:15.5px;margin-bottom:6px;">✓ Добавлено ' + successCount + ' треков в Яндекс Музыку!</div><div style="color:#8E8E93;font-size:12px;margin-bottom:14px;">Плейлист «' + title + '» готов в вашем профиле</div><a href="' + playlistUrl + '" target="_blank" style="display:inline-flex;align-items:center;justify-content:center;gap:6px;background:linear-gradient(135deg,#FFCC00,#FFAA00);color:#000;padding:10px 22px;border-radius:10px;text-decoration:none;font-weight:700;font-size:13.5px;box-shadow:0 4px 14px rgba(255,204,0,0.35);"><span>Открыть плейлист</span><span style="font-size:15px;">↗</span></a>';
     document.getElementById('ym-sc-close').onclick = dismiss;
-    setTimeout(dismiss, 12000);
+
+    if (location.pathname.includes('/playlists/')) {
+      setTimeout(() => { location.reload(); }, 1500);
+    } else {
+      setTimeout(dismiss, 12000);
+    }
   } catch (e) {
     t.innerHTML = closeBtn + '<div style="color:#FF3B30;font-weight:700;font-size:14px;margin-bottom:4px;">✕ Ошибка</div><div style="color:#CCC;font-size:12.5px;">' + (e.message || 'Ошибка') + '</div>';
     document.getElementById('ym-sc-close').onclick = dismiss;
